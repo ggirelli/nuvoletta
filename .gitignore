@@ -1,4 +1,6 @@
 /.workspaces/
 /target/
+/site/
+/.cache/
 /spikes/dioxus-editor/target/
 /spikes/dioxus-editor/js/node_modules/
