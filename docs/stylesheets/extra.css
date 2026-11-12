@@ -1,0 +1,14 @@
+/* nuvoletta's colours: calm sky blue. */
+:root {
+  --md-primary-fg-color: #4a90c8;
+  --md-primary-fg-color--light: #7db4e0;
+  --md-primary-fg-color--dark: #2f6f9f;
+  --md-accent-fg-color: #2f7fc0;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #1a2433;
+  --md-primary-bg-color: #eaf3fb;
+  --md-accent-fg-color: #7db4e0;
+  --md-typeset-a-color: #7db4e0;
+}
