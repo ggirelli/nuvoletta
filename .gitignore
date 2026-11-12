@@ -1,2 +1,4 @@
 /.workspaces/
 /target/
+/site/
+/.cache/
