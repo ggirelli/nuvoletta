@@ -1,0 +1,20 @@
+{
+  "dek_hex": "ab5ec138192168736079674cfaaf37d658ba908a2c234d68ae3e3f9d2e387f6e",
+  "description": "Header for passphrase (utf-8) with Argon2id m=8192,t=1,p=1; all randomness from a deterministic test RNG",
+  "header_hex": "4e564c5448445200000100000001c479d9be97ece9716419e353236345d8010000200000000001000000015429ab27421da18f9470c0a8983d5f5501d4651c5c0c775ff7324195db9eca30fffc0c14a5e543502ca01483e0e934ce8dcb9bc2ac212fa29a54c917402bc6c43d3be289766376f800b1d1b81cb2f27e670ea8799a277343cd213a4fccfc9b94d62f952f456bb89e62461449466e5d49328939dc95dea33623abe80cca9f94cc5bf0cd73798d8f90b25312a1e5a30e20f22a5924e06073109a528f8c4aa7239b16bec59fcc60628ca2ff4685e431d9934ca428693fb892359cdb44042521d5014d",
+  "kdf": {
+    "m_kib": 8192,
+    "p": 1,
+    "t": 1
+  },
+  "passphrase": "correct horse battery staple",
+  "recovery_key": "YAAP-1NTF-XQWH-DJSM-5T3S-WPQ8-FFC4-BZHT-YWG6-ZQHZ-NKKT-F9SJ-6G0C-DKT0",
+  "recovery_key_raw_hex": "f29560d74fedf916cb342e879e5ae87bd845fe3af7206fde3face7a7a7323400",
+  "subkeys": {
+    "device-log": "4f11295aa31197a42584bebfab1548fb6a7edb0550f8901c6ef7af7feb740810",
+    "header-auth": "73a74601b210b6f582253b4ae3348b99a511dbdcabf9d7801f6939106309ab48",
+    "local-cache": "dfe79bbebd0a1a3081bc07ecd504889cee0b87827d74ffc9117dbec358ace97d",
+    "note-content": "4ddc0b43cdc9f21f4d2cc01371d65194eb42c2b51da8c8cb17c340109335e394"
+  },
+  "vault_id_hex": "c479d9be97ece9716419e353236345d8"
+}

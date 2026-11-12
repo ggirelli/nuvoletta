@@ -175,3 +175,17 @@ Keys live in `Zeroizing<[u8;32]>` types that do not implement `Debug`/`Clone`/`S
 - Negative suite: flip every header byte and every 64th ciphertext byte, truncate at every offset, wrong passphrase, wrong RK, swapped wraps, header params tampering, object copied between vaults or between scope_ids, non-zero padding, oversized params.
 - Property and fuzz tests: parse(serialize(x)) = x; arbitrary bytes never panic or allocate beyond the limits; nonce uniqueness over N generated encryptions.
 - **Decided:** a one-time full-cost (64 MiB) Argon2 vector is committed and run in a nightly CI job on all platforms including the Android emulator.
+
+## Implementation notes (nuvoletta-crypto, Phase 1)
+
+Places where the spec was ambiguous or self-contradictory and the most conservative reading was implemented:
+
+1. **Recovery-wrap AAD vs passphrase change (contradiction).** Section 2 sets the AAD of both wraps to `bytes[0..60]`, which includes `header_gen` and `salt`, while section 8 says a passphrase change only rewrites `pw_wrap`. Both cannot hold without the recovery key. Implemented: `pw_wrap` AAD = `bytes[0..60] || "pw"` (as specified); `rk_wrap` AAD = `bytes[0..10] || bytes[14..30] || "rk"` (magic, version, vault_id; excludes generation, KDF params, salt). Nothing is lost: the recovery path has no KDF, and `header_mac` authenticates the whole header after unwrap. Recovery-key rotation increments `header_gen`, so it needs the current passphrase to re-wrap `pw_wrap`. Needs owner confirmation (format change if rejected).
+2. **Padding strictness.** On open, the padded length must equal exactly `padme(max(len + 4, 256))`, not merely `len + 4 <= L'`.
+3. **`header_gen = 0`** is rejected on parse (spec: starts at 1).
+4. **Type 4 `scope_id`** must be zero on seal and open.
+5. **Minimum passphrase length** (12 characters, counted after NFKC) is enforced when setting a passphrase (create, change), not on unlock. The zxcvbn-style warning is a UI concern, not implemented here.
+6. **Unlock errors.** Structural header errors (length, magic, version, ids, KDF range) are distinct from the generic `Unlock` error (wrong passphrase/recovery key, any authentication or MAC failure), since they occur before any secret is used.
+7. **Envelope length** has no upper bound in v1 (spec gives none); payload length is capped at `u32::MAX - 4` by the length prefix.
+8. **Dependency versions:** RustCrypto 0.5/0.10/0.12 stable line (argon2 0.5, chacha20poly1305 0.10, hkdf 0.12, hmac 0.12, sha2 0.10); newer pre-release-line majors were not adopted.
+9. The deterministic RNG is `#[cfg(test)]` only; vectors are verified by regeneration plus unlocking the committed bytes. Independent cross-implementation verification (section 11) and the committed full-cost vector are still open; a full-cost round-trip test is `#[ignore]`d (`just test-slow`).
