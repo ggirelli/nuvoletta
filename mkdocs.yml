@@ -1,0 +1,97 @@
+site_name: nuvoletta
+site_description: Private thoughts. Safely kept.
+site_url: https://ggirelli.github.io/nuvoletta/
+repo_url: https://github.com/ggirelli/nuvoletta
+repo_name: ggirelli/nuvoletta
+edit_uri: edit/main/docs/
+copyright: Free software under the MIT licence.
+
+theme:
+  name: material
+  # Only the repository link, without facts fetched from GitHub (see overrides/partials).
+  custom_dir: overrides
+  palette:
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.footer
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+    - search.highlight
+  icon:
+    repo: fontawesome/brands/github
+
+# No third-party requests: the privacy plugin downloads fonts and external assets at build time.
+plugins:
+  - search
+  - privacy
+
+exclude_docs: |
+  requirements.txt
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - Home: index.md
+  - Plan: plan.md
+  - Design:
+      - Threat model: THREAT_MODEL.md
+      - Crypto format: CRYPTO_FORMAT.md
+      - Sync protocol: SYNC_PROTOCOL.md
+      - Decisions:
+          - ADR 0001: ADR/0001-record-architecture-decisions.md
+          - ADR 0002: ADR/0002-encrypted-at-rest-vault.md
+  - Development: development.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.keys
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+      clickable_checkbox: true
+  - pymdownx.snippets:
+      base_path: [docs, .]
+      check_paths: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/ggirelli/nuvoletta
+      name: Source code
+    - icon: fontawesome/solid/heart
+      link: https://github.com/sponsors/ggirelli
+      name: Sponsor nuvoletta on GitHub
+    - icon: simple/kofi
+      link: https://ko-fi.com/ggirelli
+      name: Support nuvoletta on Ko-fi
