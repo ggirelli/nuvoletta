@@ -1,0 +1,14 @@
+{
+  "name": "nv-editor-bundle",
+  "private": true,
+  "scripts": {
+    "build": "esbuild entry.js --bundle --minify --format=iife --outfile=../assets/editor.js"
+  },
+  "dependencies": {
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.15",
+    "codemirror": "^6.0.2",
+    "esbuild": "^0.28.2"
+  }
+}

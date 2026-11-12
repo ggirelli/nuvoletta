@@ -1,0 +1,6 @@
+[application]
+name = "dioxus-editor-spike"
+
+[bundle]
+identifier = "dev.nuvoletta.spike"
+publisher = "nuvoletta"
