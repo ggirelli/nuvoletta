@@ -1,0 +1,6 @@
+body{margin:0;font-family:sans-serif}
+.bar{padding:4px 8px;background:#eee}.bar button{display:none}.status{margin:0;font-size:11px}
+.panes{display:flex;height:calc(100vh - 80px)}
+.pane{flex:1;overflow:auto;padding:8px;min-width:0}
+.editor{padding:0}.preview{border-left:1px solid #ccc}
+@media (max-width:700px){.bar button{display:inline}.panes .preview{display:none}.panes.show-preview .editor{display:none}.panes.show-preview .preview{display:block}}

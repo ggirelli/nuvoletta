@@ -1,2 +1,4 @@
 /.workspaces/
 /target/
+/spikes/dioxus-editor/target/
+/spikes/dioxus-editor/js/node_modules/
