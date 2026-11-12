@@ -10,10 +10,16 @@ scope, architecture and phases. Update it when a decision changes.
 - `main` is protected: open a PR; merges are squash or rebase, commits signed, history linear.
 - Run `just ci` (fmt-check, clippy, test, deny, build) before pushing. CI runs the same jobs.
 - Work incrementally: small, reviewable steps with tests; stop at phase exit criteria for review.
+- Commit messages and PR titles follow Conventional Commits (`feat(crypto): …`, `docs(plan): …`);
+  types, scopes and breaking-change rules are in [CONTRIBUTING.md](CONTRIBUTING.md). Any change to an
+  on-disk or on-wire format is a breaking change (`!`).
+- Stacked PRs: retarget the upper PR to `main` before merging the one below it.
+- Contribution conventions (style, tests, security rules) live in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Layout
 
-- `crates/nuvoletta-core`: core library (format, crypto, notes).
+- `crates/nuvoletta-core`: core domain library.
+- `crates/nuvoletta-crypto`: vault header, keys and encrypted object format (`docs/CRYPTO_FORMAT.md`).
 - `spikes/`: throwaway experiments, excluded from the workspace.
 
 ## Security rules (PLAN.md section 10)
