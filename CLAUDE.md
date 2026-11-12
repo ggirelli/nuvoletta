@@ -18,7 +18,7 @@ scope, architecture and phases. Update it when a decision changes.
 
 ## Layout
 
-- `crates/nuvoletta-core`: core domain library.
+- `crates/nuvoletta-core`: domain types (note ids, virtual paths, note model); no I/O.
 - `crates/nuvoletta-crypto`: vault header, keys and encrypted object format (`docs/CRYPTO_FORMAT.md`).
 - `spikes/`: throwaway experiments, excluded from the workspace.
 

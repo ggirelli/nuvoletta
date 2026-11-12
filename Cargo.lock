@@ -386,6 +386,13 @@ dependencies = [
 [[package]]
 name = "nuvoletta-core"
 version = "0.0.0"
+dependencies = [
+ "getrandom 0.3.4",
+ "proptest",
+ "thiserror",
+ "unicode-normalization",
+ "zeroize",
+]
 
 [[package]]
 name = "nuvoletta-crypto"
