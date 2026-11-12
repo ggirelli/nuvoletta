@@ -1,14 +1,16 @@
-//! Core library of Nuvoletta: the encrypted vault format and note logic.
+//! Core domain types of Nuvoletta: note identifiers, virtual note paths and the note model.
+//!
+//! This crate is pure domain logic: no filesystem, no UI, no provider code. Persistence lives in
+//! `nuvoletta-storage` and the encrypted formats in `nuvoletta-crypto`.
 
-/// Version of the encrypted file format. `0` means the format is not yet defined.
-pub const FORMAT_VERSION: u16 = 0;
+#![forbid(unsafe_code)]
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod error;
+pub mod id;
+pub mod note;
+pub mod path;
 
-    #[test]
-    fn format_is_undefined_until_designed() {
-        assert_eq!(FORMAT_VERSION, 0);
-    }
-}
+pub use error::{Error, Result};
+pub use id::NoteId;
+pub use note::{MAX_BODY, MAX_TAGS, MAX_TITLE, Note, now_ms};
+pub use path::NotePath;
