@@ -421,7 +421,7 @@ Additional rules:
 
 Current direction:
 - Product name: **Nuvoletta**. License: MIT, open source. Solo developer; design reviews are AI-assisted (Claude, ChatGPT) plus owner sign-off.
-- UI: Rust + Dioxus (Tauri as fallback if the Phase 0 spike fails).
+- UI: Rust + Dioxus (spike passed: GO).
 - Canonical note format: Markdown. Portability via plaintext export/import.
 - Local persistence: encrypted files in a vault directory, encrypted at rest; no database for the MVP.
 - Encryption: proposed Argon2id + XChaCha20-Poly1305 (random 192-bit nonces) with length padding, subject to review.
@@ -432,16 +432,16 @@ Current direction:
 - Attachments: post-MVP. Local note version history: MVP if cheap, else early post-MVP.
 - Platforms: desktop and Android first; iOS feasibility to be validated.
 - Plugins: architecture should allow extensions later; plugin runtime is not MVP scope.
+- Dioxus spike: GO (desktop and Android build and run verified). Editor is a vendored CodeMirror 6 bundle (~600 KB, no CDN), JS dependency tree under supply-chain review.
+- Unlock: passphrase-only on all platforms in the MVP; Android Keystore/biometric unlock is post-MVP. Android minimum API level 28.
+- Preview: raw HTML escaped; link scheme allow-list (http, https, mailto, internal wikilinks); remote images blocked by default.
+- Crypto and sync decisions (Argon2id 64 MiB/t=3/p=1, Padme padding, CBOR/minicbor, sharded `o/`, multi-head conflicts, manual GC, snapshots post-MVP) are recorded in docs/CRYPTO_FORMAT.md and docs/SYNC_PROTOCOL.md; local snapshots are post-MVP.
 
 Resolve during Phase 0:
-- Exact encrypted object and per-device log formats; padding scheme.
-- Remote rollback/deletion detection guarantees given the per-device logs.
-- Whether a vault has one sync destination initially or can configure multiple destinations.
 - Exact Markdown dialect and wikilink resolution rules.
-- Outcome of the Dioxus spike (editor, credential store, Android file access).
+- Whether a vault has one sync destination initially or can configure multiple destinations.
 - Is an encrypted on-disk index cache needed to meet the ~10k-note unlock target on mid-range Android?
-- Are local snapshots in the MVP or early post-MVP?
-- Future DEK rotation / device revocation design.
+- Future DEK rotation / device revocation design (post-MVP).
 
 ---
 
