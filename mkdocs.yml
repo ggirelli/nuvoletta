@@ -52,6 +52,7 @@ nav:
       - Threat model: THREAT_MODEL.md
       - Crypto format: CRYPTO_FORMAT.md
       - Sync protocol: SYNC_PROTOCOL.md
+      - Storage format: STORAGE_FORMAT.md
       - Decisions:
           - ADR 0001: ADR/0001-record-architecture-decisions.md
           - ADR 0002: ADR/0002-encrypted-at-rest-vault.md

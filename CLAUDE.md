@@ -20,6 +20,7 @@ scope, architecture and phases. Update it when a decision changes.
 
 - `crates/nuvoletta-core`: domain types (note ids, virtual paths, note model); no I/O.
 - `crates/nuvoletta-crypto`: vault header, keys and encrypted object format (`docs/CRYPTO_FORMAT.md`).
+- `crates/nuvoletta-storage`: filesystem vault, atomic writes, note CRUD (`docs/STORAGE_FORMAT.md`).
 - `spikes/`: throwaway experiments, excluded from the workspace.
 
 ## Security rules (PLAN.md section 10)
