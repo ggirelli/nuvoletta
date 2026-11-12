@@ -18,6 +18,10 @@ clippy:
 test:
     cargo test --workspace --locked
 
+# Run slow tests (full-cost Argon2id vectors; nightly CI)
+test-slow:
+    cargo test --workspace --locked --release -- --ignored
+
 # Check advisories, licences and sources
 deny:
     cargo deny --locked check
