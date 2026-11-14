@@ -421,6 +421,7 @@ dependencies = [
  "proptest",
  "pulldown-cmark",
  "unicode-normalization",
+ "zeroize",
 ]
 
 [[package]]
