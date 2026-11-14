@@ -33,9 +33,39 @@ pub enum Resolution {
     Unresolved,
 }
 
-/// Normalise for comparison: trim, NFC, Unicode lowercase.
-fn norm(s: &str) -> String {
+/// Normalise for comparison: trim, NFC, Unicode lowercase. The single normalisation used by
+/// resolution, tags and the index.
+pub(crate) fn norm(s: &str) -> String {
     s.trim().nfc().collect::<String>().to_lowercase()
+}
+
+/// Normalise a wikilink target: strip leading and trailing `/`, then [`norm`]. Empty means the
+/// target cannot match anything.
+pub(crate) fn normalize_target(target: &str) -> String {
+    norm(target.trim_matches('/'))
+}
+
+/// The normalised keys a note can be found by.
+#[derive(PartialEq, Eq)]
+pub(crate) struct NoteKeys {
+    /// Normalised full virtual path.
+    pub(crate) path: String,
+    /// Normalised last path segment.
+    pub(crate) last: String,
+    /// Normalised title.
+    pub(crate) title: String,
+}
+
+impl NoteKeys {
+    pub(crate) fn new(path: &NotePath, title: &str) -> Self {
+        let path = norm(path.as_str());
+        let last = path.rsplit('/').next().unwrap_or_default().to_owned();
+        Self {
+            path,
+            last,
+            title: norm(title),
+        }
+    }
 }
 
 /// Resolve a wikilink `target` (without fragment) against `candidates`.
@@ -48,18 +78,17 @@ pub fn resolve<'a, I>(target: &str, candidates: I) -> Resolution
 where
     I: IntoIterator<Item = Candidate<'a>>,
 {
-    let t = norm(target.trim_matches('/'));
+    let t = normalize_target(target);
     if t.is_empty() {
         return Resolution::Unresolved;
     }
     let mut loose: Vec<NoteId> = Vec::new();
     for c in candidates {
-        let path = norm(c.path.as_str());
-        if path == t {
+        let keys = NoteKeys::new(c.path, c.title);
+        if keys.path == t {
             return Resolution::Resolved(c.id);
         }
-        let last = path.rsplit('/').next().unwrap_or_default();
-        if (last == t || norm(c.title) == t) && !loose.contains(&c.id) {
+        if (keys.last == t || keys.title == t) && !loose.contains(&c.id) {
             loose.push(c.id);
         }
     }

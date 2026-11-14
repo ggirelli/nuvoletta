@@ -14,6 +14,7 @@ workspace = true
 nuvoletta-core = { path = "../nuvoletta-core", version = "0.0.0" }
 pulldown-cmark = { version = "0.13", default-features = false }
 unicode-normalization.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
