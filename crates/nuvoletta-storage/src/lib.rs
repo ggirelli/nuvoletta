@@ -11,6 +11,7 @@ pub mod error;
 mod fsutil;
 pub mod layout;
 pub mod locked;
+pub mod portable;
 pub mod unlocked;
 
 pub use error::{Error, Result};
