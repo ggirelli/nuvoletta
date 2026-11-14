@@ -14,11 +14,15 @@ fmt-check:
 clippy:
     cargo clippy --workspace --all-targets --locked -- -D warnings
 
-# Run every test
+# Run every test (the desktop app needs GTK and WebKitGTK development packages on Linux)
 test:
     cargo test --workspace --locked
 
-# Run slow tests (full-cost Argon2id vectors; nightly CI)
+# Run the tests of everything except the desktop app: no webview libraries needed
+test-core:
+    cargo test --workspace --exclude nuvoletta-app --locked
+
+# Run slow tests (full-cost Argon2id vectors; nightly CI, Linux)
 test-slow:
     cargo test --workspace --locked --release -- --ignored
 
@@ -26,9 +30,17 @@ test-slow:
 deny:
     cargo deny --locked check
 
-# Build everything
+# Build everything, including the desktop app
 build:
     cargo build --workspace --locked
+
+# Build only the crates that need no webview libraries
+build-core:
+    cargo build --workspace --exclude nuvoletta-app --locked
+
+# Run the desktop app
+app:
+    cargo run -p nuvoletta-app --locked
 
 # Run everything CI checks
 ci: fmt-check clippy test deny build

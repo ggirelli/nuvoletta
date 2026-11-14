@@ -244,6 +244,7 @@ nuvoletta/
 │   ├── nuvoletta-crypto/     # Key hierarchy, encrypted object format
 │   ├── nuvoletta-storage/    # Filesystem vault and atomic persistence
 │   ├── nuvoletta-markdown/   # Markdown parsing, extensions, safe rendering
+│   ├── nuvoletta-app-core/   # UI-independent app logic: session, autosave, auto-lock, queries
 │   ├── nuvoletta-sync/       # Sync state machine and conflict handling
 │   ├── nuvoletta-provider/   # Provider traits and shared sync types
 │   └── nuvoletta-webdav/     # WebDAV backend
@@ -319,8 +320,14 @@ Implement:
 - Note navigation, Markdown editor with live preview, autosave and unsaved-change handling.
 - Search, tags, and backlinks.
 - Locking and inactivity behavior.
-- Platform credential-store integration where appropriate.
+- ~~Platform credential-store integration where appropriate.~~ **Deferred** (owner decision, see section 11): unlock is passphrase-only in the MVP.
 - Accessibility, keyboard navigation, and error states.
+
+Decisions made in Phase 3 (details in `docs/ADR/0004-desktop-app-architecture.md` and `docs/APP.md`):
+- All non-UI logic lives in `nuvoletta-app-core` and is tested without a webview; `apps/nuvoletta-app` is a thin Dioxus view.
+- Auto-lock after inactivity, default 5 minutes, configurable (1 to 1440; no "never"), plus a manual lock shortcut. Locking saves first; if saving fails the vault stays unlocked and nothing is discarded unless the user explicitly forces it.
+- The webview gets a strict Content-Security-Policy; the limits Dioxus 0.7 desktop imposes on it are documented in the ADR.
+- CI builds the desktop app on Linux in every pull request; a nightly workflow builds and tests it on Linux, macOS and Windows and runs `just test-slow` on Linux.
 
 Exit criteria:
 - A user can comfortably create, edit, link, find, and preview notes offline.
@@ -433,7 +440,8 @@ Current direction:
 - Platforms: desktop and Android first; iOS feasibility to be validated.
 - Plugins: architecture should allow extensions later; plugin runtime is not MVP scope.
 - Dioxus spike: GO (desktop and Android build and run verified). Editor is a vendored CodeMirror 6 bundle (~600 KB, no CDN), JS dependency tree under supply-chain review.
-- Unlock: passphrase-only on all platforms in the MVP; Android Keystore/biometric unlock is post-MVP. Android minimum API level 28.
+- Unlock: passphrase-only on all platforms in the MVP; platform credential-store integration (desktop keyrings, Android Keystore/biometric unlock) is deferred to post-MVP. Android minimum API level 28.
+- Desktop app: auto-lock after 5 minutes of inactivity by default (configurable); export always warns that it writes plaintext; the webview runs under a strict CSP (ADR 0004).
 - Markdown: pulldown-cmark, CommonMark + tables, strikethrough, task lists, footnotes; `[[Target|alias#fragment]]` wikilinks resolved by full path, then last segment or title (NFC, case-insensitive, ambiguity reported), see docs/ADR/0003-markdown-dialect-and-wikilinks.md.
 - Preview: raw HTML escaped; link scheme allow-list (http, https, mailto, internal wikilinks); remote images blocked by default.
 - Crypto and sync decisions (Argon2id 64 MiB/t=3/p=1, Padme padding, CBOR/minicbor, sharded `o/`, multi-head conflicts, manual GC, snapshots post-MVP) are recorded in docs/CRYPTO_FORMAT.md and docs/SYNC_PROTOCOL.md; local snapshots are post-MVP.
