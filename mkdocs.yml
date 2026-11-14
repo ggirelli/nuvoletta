@@ -56,6 +56,7 @@ nav:
       - Decisions:
           - ADR 0001: ADR/0001-record-architecture-decisions.md
           - ADR 0002: ADR/0002-encrypted-at-rest-vault.md
+          - ADR 0003: ADR/0003-markdown-dialect-and-wikilinks.md
   - Development: development.md
 
 markdown_extensions:
