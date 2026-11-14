@@ -4,7 +4,17 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
-ignore = []
+# All three come only through the Dioxus desktop stack (nuvoletta-app), not through any crate that
+# handles keys or note data. They are "unmaintained" notices, not vulnerabilities. Revisit when
+# Dioxus/wry update; remove each entry once its crate leaves the tree.
+ignore = [
+    # fxhash: selectors <- kuchikiki <- wry (devtools feature of dioxus-desktop)
+    { id = "RUSTSEC-2025-0057", reason = "unmaintained; only via wry's HTML helper in the webview stack" },
+    # paste: rav1e <- ravif <- image <- dioxus-desktop (icon/image decoding)
+    { id = "RUSTSEC-2024-0436", reason = "unmaintained proc-macro; build-time only, via image's AVIF encoder" },
+    # proc-macro-error: glib-macros <- gtk <- tao/wry (Linux windowing)
+    { id = "RUSTSEC-2024-0370", reason = "unmaintained proc-macro; build-time only, via the GTK bindings" },
+]
 
 [licenses]
 version = 2
@@ -20,6 +30,12 @@ allow = [
     "CDLA-Permissive-2.0",
     "ISC",
     "MIT",
+    # Weak, file-level copyleft. Only in the Dioxus/wry webview stack and `dirs` (cssparser,
+    # selectors, dtoa-short, option-ext); used unmodified as dependencies, so it does not affect
+    # the licence of Nuvoletta's own code. Needed by `nuvoletta-app` only.
+    "MPL-2.0",
+    # BSD-like (University of Illinois/NCSA); libfuzzer-sys, pulled by Dioxus via image/rav1e.
+    "NCSA",
     "Unicode-3.0",
     "Zlib",
 ]

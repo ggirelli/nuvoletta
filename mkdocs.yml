@@ -50,6 +50,7 @@ extra_css:
 nav:
   - Home: index.md
   - Plan: plan.md
+  - Desktop app: APP.md
   - Design:
       - Threat model: THREAT_MODEL.md
       - Crypto format: CRYPTO_FORMAT.md
@@ -60,6 +61,7 @@ nav:
           - ADR 0001: ADR/0001-record-architecture-decisions.md
           - ADR 0002: ADR/0002-encrypted-at-rest-vault.md
           - ADR 0003: ADR/0003-markdown-dialect-and-wikilinks.md
+          - ADR 0004: ADR/0004-desktop-app-architecture.md
   - Development: development.md
 
 markdown_extensions:
