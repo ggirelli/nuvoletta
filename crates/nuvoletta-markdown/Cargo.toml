@@ -1,0 +1,19 @@
+[package]
+name = "nuvoletta-markdown"
+description = "Markdown dialect, wikilinks and safe HTML rendering for Nuvoletta"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+nuvoletta-core = { path = "../nuvoletta-core", version = "0.0.0" }
+pulldown-cmark = { version = "0.13", default-features = false }
+unicode-normalization.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

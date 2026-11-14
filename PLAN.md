@@ -434,11 +434,11 @@ Current direction:
 - Plugins: architecture should allow extensions later; plugin runtime is not MVP scope.
 - Dioxus spike: GO (desktop and Android build and run verified). Editor is a vendored CodeMirror 6 bundle (~600 KB, no CDN), JS dependency tree under supply-chain review.
 - Unlock: passphrase-only on all platforms in the MVP; Android Keystore/biometric unlock is post-MVP. Android minimum API level 28.
+- Markdown: pulldown-cmark, CommonMark + tables, strikethrough, task lists, footnotes; `[[Target|alias#fragment]]` wikilinks resolved by full path, then last segment or title (NFC, case-insensitive, ambiguity reported), see docs/ADR/0003-markdown-dialect-and-wikilinks.md.
 - Preview: raw HTML escaped; link scheme allow-list (http, https, mailto, internal wikilinks); remote images blocked by default.
 - Crypto and sync decisions (Argon2id 64 MiB/t=3/p=1, Padme padding, CBOR/minicbor, sharded `o/`, multi-head conflicts, manual GC, snapshots post-MVP) are recorded in docs/CRYPTO_FORMAT.md and docs/SYNC_PROTOCOL.md; local snapshots are post-MVP.
 
 Resolve during Phase 0:
-- Exact Markdown dialect and wikilink resolution rules.
 - Whether a vault has one sync destination initially or can configure multiple destinations.
 - Is an encrypted on-disk index cache needed to meet the ~10k-note unlock target on mid-range Android?
 - Future DEK rotation / device revocation design (post-MVP).
