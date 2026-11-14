@@ -29,6 +29,16 @@ pub enum Error {
     /// No note with this id exists.
     #[error("note {0} not found")]
     NotFound(NoteId),
+    /// The export destination exists and is not an empty directory.
+    #[error("export destination exists and is not an empty directory")]
+    DestinationNotEmpty,
+    /// The export destination is the vault directory or inside it; plaintext must never be
+    /// written into a vault (it may be synchronised).
+    #[error("export destination is inside the vault directory")]
+    DestinationInsideVault,
+    /// The import source contains the vault directory or lies inside it.
+    #[error("import source overlaps the vault directory")]
+    SourceOverlapsVault,
     /// The vault header on disk changed underneath this session; reopen the vault.
     #[error("vault header changed on disk since unlock")]
     HeaderChanged,

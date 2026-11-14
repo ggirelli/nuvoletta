@@ -15,6 +15,7 @@ getrandom.workspace = true
 nuvoletta-core = { path = "../nuvoletta-core", version = "0.0.0" }
 nuvoletta-crypto = { path = "../nuvoletta-crypto", version = "0.0.0" }
 thiserror.workspace = true
+unicode-normalization.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]

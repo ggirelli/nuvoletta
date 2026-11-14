@@ -432,6 +432,7 @@ dependencies = [
  "nuvoletta-crypto",
  "tempfile",
  "thiserror",
+ "unicode-normalization",
  "zeroize",
 ]
 
