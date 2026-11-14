@@ -1,3 +1,6 @@
+![nuvoletta](assets/brand/10-docs-hero-light.svg#only-light)
+![nuvoletta](assets/brand/11-docs-hero-dark.svg#only-dark)
+
 # nuvoletta
 
 *Private thoughts. Safely kept.*
