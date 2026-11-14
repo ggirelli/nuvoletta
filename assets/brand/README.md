@@ -48,3 +48,8 @@ on the blue tile, with heavier strokes at small sizes); banners have three overl
 cloud banks that span the bottom and rise at both sides.
 Edit the mark, palette or layout there and run `python3 assets/brand/generate.py`; do not edit the
 SVGs by hand.
+
+## Docs site copies
+MkDocs only serves `docs/`, so the SVGs the site uses (`02`, `06a`, `10`, `11`) are
+copied to `docs/assets/brand/`. They are copies of `assets/brand/`: after running `generate.py`,
+copy them again (`cp assets/brand/{02,06a,10,11}-*.svg docs/assets/brand/`).

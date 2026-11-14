@@ -1,4 +1,7 @@
-# Nuvoletta
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/07b-wordmark-dark.svg">
+  <img alt="Nuvoletta" src="assets/brand/07a-wordmark-light.svg" width="360">
+</picture>
 
 *Private thoughts. Safely kept.*
 
