@@ -122,3 +122,33 @@ fuzz-seeds:
 [group('test')]
 bench:
     cargo test --release -p nuvoletta-app-core --test perf -- --ignored --nocapture --test-threads=1
+
+# Print the release version (the workspace version in Cargo.toml)
+[group('release')]
+release-version:
+    @scripts/release/version.sh
+
+# Set the version everywhere it lives, for example `just release-prepare 0.1.0` (see docs/RELEASING.md)
+[group('release')]
+release-prepare version:
+    scripts/release/prepare.sh {{version}}
+
+# Build the Linux tarball reproducibly into dist/ (needs the Linux desktop libraries and dx)
+[group('release')]
+release-linux:
+    scripts/release/linux-tarball.sh dist
+
+# Build and sign the release Android APK into dist/ (needs the Android toolchain; see docs/RELEASING.md)
+[group('release')]
+release-android:
+    scripts/release/android-apk.sh dist
+
+# Write the CycloneDX SBOM into dist/
+[group('release')]
+release-sbom:
+    scripts/release/sbom.sh dist
+
+# Build the Linux tarball twice in different directories and compare checksums
+[group('release')]
+release-check:
+    scripts/release/check-reproducible.sh
