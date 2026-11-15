@@ -288,6 +288,12 @@ fn build_note(text: &str, segs: &[String]) -> std::result::Result<(Note, Vec<Str
     Ok((note, fm.unknown_keys))
 }
 
+pub(super) fn fuzz_build_note(text: &str, segs: &[String]) -> std::result::Result<Note, String> {
+    build_note(text, segs)
+        .map(|(n, _)| n)
+        .map_err(|e| format!("{e:?}"))
+}
+
 fn store(
     vault: &mut Unlocked,
     note: &mut Note,

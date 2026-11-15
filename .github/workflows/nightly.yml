@@ -1,7 +1,9 @@
 name: Nightly
 
 # Slower and wider checks than the pull request CI: the desktop app on all three desktop platforms,
-# the Android APK, and the full-cost (slow) tests on Linux.
+# the Android APK, the full-cost (slow) tests on Linux and the fuzz targets.
+#
+# Actions here are pinned to commit SHAs (the comment names the tag); see docs/SUPPLY_CHAIN.md.
 on:
   schedule:
     - cron: "17 3 * * *"
@@ -19,16 +21,20 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
       - uses: ./.github/actions/linux-deps
         if: runner.os == 'Linux'
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - name: Build the workspace, including the desktop app (release)
         run: cargo build --workspace --locked --release
       - name: Test the workspace
         run: cargo test --workspace --locked
-      - uses: taiki-e/install-action@just
+      - uses: taiki-e/install-action@4ccefd7d26b61bbb81f4ff01165e8a6880a1bd59 # just
+        with:
+          tool: just
         if: runner.os == 'Linux'
       - name: Slow tests (full-cost Argon2id vectors)
         if: runner.os == 'Linux'
@@ -40,18 +46,21 @@ jobs:
     name: android (apk)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
           java-version: "17"
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
+          toolchain: stable
           targets: aarch64-linux-android
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@just
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - uses: taiki-e/install-action@4ccefd7d26b61bbb81f4ff01165e8a6880a1bd59 # just
+        with:
+          tool: just
       # The runner image provides the Android SDK and NDK (ANDROID_HOME, ANDROID_NDK_HOME).
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         id: dx
         with:
           path: ~/.cargo/bin/dx
@@ -61,3 +70,60 @@ jobs:
         run: cargo install dioxus-cli --version 0.7.10 --locked
       - run: just android
       - run: just android-permissions
+
+  # Runs every target in fuzz/ for a bounded time. A crash fails the job and the reproducer is
+  # uploaded; reproduce locally with `cargo +nightly fuzz run <target> <artifact>` and add a
+  # regression test in the crate that owns the bug.
+  fuzz:
+    name: fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - vault_header
+          - envelope
+          - note_payload
+          - log_segment
+          - state_docs
+          - remote_names
+          - webdav_xml
+          - webdav_href
+          - markdown_render
+          - wikilinks
+          - portable_markdown
+          - app_links
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: nightly
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: fuzz
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: cargo-fuzz
+        with:
+          path: ~/.cargo/bin/cargo-fuzz
+          key: cargo-fuzz-0.13.2
+      - name: Install cargo-fuzz
+        if: steps.cargo-fuzz.outputs.cache-hit != 'true'
+        run: cargo install cargo-fuzz --version 0.13.2 --locked
+      # The corpus is cached between nights, so each run starts where the last one stopped.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+      - name: Fuzz for ten minutes
+        run: |
+          mkdir -p fuzz/corpus/${{ matrix.target }}
+          cargo +nightly fuzz run ${{ matrix.target }} fuzz/corpus/${{ matrix.target }} fuzz/seeds/${{ matrix.target }} -- -max_total_time=600 -rss_limit_mb=4096
+      - name: Upload crash reproducers
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}
+          if-no-files-found: ignore

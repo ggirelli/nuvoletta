@@ -1,0 +1,122 @@
+[package]
+name = "nuvoletta-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+description = "cargo-fuzz targets for every parser of untrusted input (excluded from the workspace)"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Not part of the main workspace: libFuzzer needs nightly and sanitizer flags, and its macro
+# expands to `unsafe` code that the workspace lint forbids. Nuvoletta's own crates stay unsafe-free.
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+nuvoletta-app-core = { path = "../crates/nuvoletta-app-core" }
+nuvoletta-core = { path = "../crates/nuvoletta-core" }
+nuvoletta-crypto = { path = "../crates/nuvoletta-crypto" }
+nuvoletta-markdown = { path = "../crates/nuvoletta-markdown" }
+nuvoletta-storage = { path = "../crates/nuvoletta-storage" }
+nuvoletta-sync = { path = "../crates/nuvoletta-sync" }
+nuvoletta-webdav = { path = "../crates/nuvoletta-webdav" }
+minicbor = { version = "2", features = ["derive", "std"] }
+
+[profile.release]
+debug = 1
+
+# Same as the workspace: keep crypto fast.
+[profile.dev.package."*"]
+opt-level = 3
+
+[[bin]]
+name = "gen_seeds"
+path = "src/gen_seeds.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "vault_header"
+path = "fuzz_targets/vault_header.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "envelope"
+path = "fuzz_targets/envelope.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "note_payload"
+path = "fuzz_targets/note_payload.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "log_segment"
+path = "fuzz_targets/log_segment.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "state_docs"
+path = "fuzz_targets/state_docs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "remote_names"
+path = "fuzz_targets/remote_names.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "webdav_xml"
+path = "fuzz_targets/webdav_xml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "webdav_href"
+path = "fuzz_targets/webdav_href.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "markdown_render"
+path = "fuzz_targets/markdown_render.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "wikilinks"
+path = "fuzz_targets/wikilinks.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "portable_markdown"
+path = "fuzz_targets/portable_markdown.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "app_links"
+path = "fuzz_targets/app_links.rs"
+test = false
+doc = false
+bench = false

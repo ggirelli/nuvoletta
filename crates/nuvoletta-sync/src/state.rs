@@ -326,6 +326,46 @@ where
     d.decode().map_err(|_| Error::State("decode"))
 }
 
+/// Fuzzing entry point: feed `value` (raw CBOR, not validated) as the value of every state
+/// document kind, sealed under `keys`, through the real decoder. Returns the kinds that decoded
+/// and did not survive a re-encode and decode unchanged (always empty unless there is a bug).
+#[doc(hidden)]
+#[must_use]
+pub fn fuzz_decode_docs(keys: &Subkeys, value: &[u8]) -> Vec<&'static str> {
+    fn one<T>(keys: &Subkeys, kind: &'static str, value: &[u8], bad: &mut Vec<&'static str>)
+    where
+        T: for<'b> Decode<'b, ()> + Encode<()> + PartialEq,
+    {
+        let mut buf = Vec::new();
+        let mut e = minicbor::Encoder::new(&mut buf);
+        if e.array(2).and_then(|e| e.str(kind)).is_err() {
+            return;
+        }
+        buf.extend_from_slice(value);
+        let Ok(meta) = ObjectMeta::new(ObjType::LocalState, [0; 16]) else {
+            return;
+        };
+        let Ok(sealed) = seal(keys, &meta, &buf) else {
+            return;
+        };
+        let Ok(first) = open_doc::<T>(keys, kind, &sealed) else {
+            return;
+        };
+        let again = seal_doc(keys, kind, &first).and_then(|b| open_doc::<T>(keys, kind, &b));
+        if !again.is_ok_and(|second| second == first) {
+            bad.push(kind);
+        }
+    }
+    let mut bad = Vec::new();
+    one::<Journal>(keys, "journal", value, &mut bad);
+    one::<BTreeMap<DeviceId, Peer>>(keys, "peers", value, &mut bad);
+    one::<BTreeMap<Id16, NoteRec>>(keys, "notes", value, &mut bad);
+    one::<BTreeMap<String, Inv>>(keys, "inventory", value, &mut bad);
+    one::<Pending>(keys, "pending", value, &mut bad);
+    one::<u32>(keys, "max-header-gen", value, &mut bad);
+    bad
+}
+
 fn load_file<T>(dir: &Path, keys: &Subkeys, name: &str) -> Result<Option<T>>
 where
     T: for<'b> Decode<'b, ()>,

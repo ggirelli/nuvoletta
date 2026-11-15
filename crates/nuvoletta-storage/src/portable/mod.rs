@@ -16,6 +16,32 @@ mod frontmatter;
 mod import;
 mod timestamp;
 
+/// Entry points for the fuzz targets; not part of the API.
+#[doc(hidden)]
+pub mod fuzzing {
+    use nuvoletta_core::Note;
+
+    /// Parse one Markdown file as import does (`segs`: the path segments of the file name).
+    ///
+    /// # Errors
+    /// The skip reason, as text.
+    pub fn parse_note(text: &str, segs: &[String]) -> std::result::Result<Note, String> {
+        super::import::fuzz_build_note(text, segs)
+    }
+
+    /// The front matter of `note` followed by its body, as export writes the file.
+    #[must_use]
+    pub fn emit_file(note: &Note) -> String {
+        format!("{}{}", super::frontmatter::emit(note), note.body)
+    }
+
+    /// Escape a virtual path segment into a file name component.
+    #[must_use]
+    pub fn escape_segment(seg: &str) -> String {
+        super::filename::escape_segment(seg)
+    }
+}
+
 use std::path::{Path, PathBuf};
 
 /// Canonical form of `path` even if it does not exist yet: the nearest existing ancestor is

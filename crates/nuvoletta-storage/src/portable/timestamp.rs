@@ -106,7 +106,7 @@ pub(crate) fn parse(text: &str) -> Option<i64> {
             return None;
         }
         let mut milli = 0;
-        for (i, b) in frac.bytes().take(3).enumerate() {
+        for (i, b) in frac.bytes().take(n.min(3)).enumerate() {
             milli += i64::from(b - b'0') * [100, 10, 1][i];
         }
         ms += milli;
@@ -179,6 +179,20 @@ mod tests {
             Some(1_700_000_000_123)
         );
         assert_eq!(parse("12345"), Some(12345));
+    }
+
+    #[test]
+    fn short_fractions_followed_by_an_offset_do_not_overflow() {
+        // Found by fuzzing: the digit loop looked at the bytes after a one- or two-digit fraction.
+        assert_eq!(
+            parse("2023-11-14T22:13:20.1+01:00"),
+            Some(1_699_996_400_100)
+        );
+        assert_eq!(
+            parse("2023-11-14T22:13:20.12-01:00"),
+            Some(1_700_003_600_120)
+        );
+        assert_eq!(parse("2023-11-14T22:13:20.1Z"), Some(1_700_000_000_100));
     }
 
     #[test]

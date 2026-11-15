@@ -234,3 +234,27 @@ proptest! {
         check_safe(&render_images(&s).replace("<img ", "<im "));
     }
 }
+
+/// Found by fuzzing: `https:/host` and `https:path` are not absolute URLs (a browser resolves
+/// them against the page's own origin), so they must not become links or images.
+#[test]
+fn web_urls_without_an_authority_are_blocked() {
+    for dest in [
+        "https:/A/e.qrg",
+        "https:foo",
+        "http:foo",
+        "https:///x",
+        "https://",
+        "HTTPS:/x",
+    ] {
+        let h = render(&format!("[t]({dest})"));
+        assert!(
+            h.contains("link-blocked") && !h.contains("href"),
+            "{dest}: {h}"
+        );
+        let h = render_images(&format!("![t]({dest})"));
+        assert!(!h.contains("<img"), "{dest}: {h}");
+    }
+    let h = render("[t](https://example.org/a) [m](mailto:a@b.c)");
+    assert!(h.contains("href=\"https://example.org/a\"") && h.contains("href=\"mailto:a@b.c\""));
+}

@@ -4,6 +4,10 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
+# Report unmaintained and unsound crates anywhere in the tree, not only direct dependencies. The
+# few known notices below are ignored explicitly, with reasons.
+unmaintained = "all"
+unsound = "all"
 # All three come only through the Dioxus desktop stack (nuvoletta-app), not through any crate that
 # handles keys or note data. They are "unmaintained" notices, not vulnerabilities. Revisit when
 # Dioxus/wry update; remove each entry once its crate leaves the tree.
@@ -14,6 +18,10 @@ ignore = [
     { id = "RUSTSEC-2024-0436", reason = "unmaintained proc-macro; build-time only, via image's AVIF encoder" },
     # proc-macro-error: glib-macros <- gtk <- tao/wry (Linux windowing)
     { id = "RUSTSEC-2024-0370", reason = "unmaintained proc-macro; build-time only, via the GTK bindings" },
+    # glib 0.18: gtk-rs 0.18 is what tao/wry 0.5x use on Linux; fixed in glib 0.20, which needs a wry update.
+    { id = "RUSTSEC-2024-0429", reason = "unsound VariantStrIter in glib 0.18; Nuvoletta never iterates GVariant strings; only via tao/wry on Linux" },
+    # rand 0.7.3: phf_generator 0.8 <- phf_codegen <- selectors build script (wry); the unsoundness needs a custom logger calling rand::rng(), and this copy only runs at build time.
+    { id = "RUSTSEC-2026-0097", reason = "rand 0.7.3 is build-time only (selectors' phf_codegen); no custom logger" },
 ]
 
 [licenses]
@@ -25,7 +33,6 @@ allow = [
     "BSD-2-Clause",
     "BSD-3-Clause",
     "BlueOak-1.0.0",
-    "BSL-1.0",
     "CC0-1.0",
     "CDLA-Permissive-2.0",
     "ISC",
@@ -44,10 +51,25 @@ allow = [
 ignore = true
 
 [bans]
-multiple-versions = "allow"
+# Duplicates mostly come from the Dioxus/wry/GTK stack (windows-*, phf, syn, ...). They are shown
+# as warnings so that a new duplicate of a crate we use directly is noticed in review; making them
+# errors would block on upstream releases. docs/SUPPLY_CHAIN.md describes how to handle one.
+multiple-versions = "warn"
 wildcards = "deny"
+# Transport and cryptography use rustls with ring and the RustCrypto crates only. A system
+# TLS or OpenSSL dependency would add a second, unreviewed trust path (and C code).
+deny = [
+    # `wrappers` names the only crates allowed to depend on each one. native-tls comes from
+    # tungstenite, i.e. the Dioxus desktop devtools websocket (localhost, no notes or keys); the
+    # sync transport (ureq + rustls) and the crypto crates never touch it.
+    { crate = "native-tls", wrappers = ["tungstenite"], reason = "TLS is rustls only; tolerated only via Dioxus' devtools websocket" },
+    { crate = "openssl", wrappers = ["native-tls"], reason = "TLS is rustls only" },
+    { crate = "openssl-sys", wrappers = ["native-tls", "openssl"], reason = "TLS is rustls only" },
+]
 
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# No git dependencies at all: everything comes from crates.io with a checksum in Cargo.lock.
+allow-git = []

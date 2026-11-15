@@ -62,7 +62,8 @@ pub fn parse_http_date(s: &str) -> Option<i64> {
         t.next()?.parse().ok()?,
         t.next()?.parse().ok()?,
     );
-    if !(1..=31).contains(&day)
+    if !(1..=9999).contains(&year)
+        || !(1..=31).contains(&day)
         || !(0..24).contains(&h)
         || !(0..60).contains(&mi)
         || !(0..61).contains(&se)
@@ -247,6 +248,17 @@ mod tests {
                 || parse_multistatus(b"x").unwrap().is_empty()
         );
         assert_eq!(parse_multistatus(b"").unwrap().len(), 0);
+    }
+
+    #[test]
+    fn absurd_years_are_rejected_not_overflowed() {
+        // Found by fuzzing: a huge year overflowed the millisecond arithmetic.
+        assert_eq!(
+            parse_http_date("Tue, 15 Nov 9223372036854775807 08:12:31 GMT"),
+            None
+        );
+        assert_eq!(parse_http_date("Tue, 15 Nov 10000 08:12:31 GMT"), None);
+        assert!(parse_http_date("Tue, 15 Nov 9999 08:12:31 GMT").is_some());
     }
 
     #[test]
