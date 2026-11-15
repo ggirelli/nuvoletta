@@ -50,6 +50,15 @@ extra_css:
 nav:
   - Home: index.md
   - Plan: plan.md
+  - User guide:
+      - Overview: user/index.md
+      - Getting started: user/getting-started.md
+      - Backup and restore: user/backup-and-restore.md
+      - Sync setup: user/sync-setup.md
+      - Lost or stolen device: user/device-loss.md
+      - Recovery key: user/recovery-key.md
+      - Security and privacy: user/security-and-privacy.md
+      - Privacy policy: user/privacy-policy.md
   - Desktop and Android app: APP.md
   - WebDAV setup: WEBDAV.md
   - Design:
