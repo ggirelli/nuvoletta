@@ -64,7 +64,7 @@ pub fn Workspace() -> Element {
                 }
                 if info.is_none() {
                     div { class: "empty",
-                        p { "Select a note, or press Ctrl+N to create one." }
+                        p { "Select a note, or use New note to create one." }
                     }
                 }
                 div {
@@ -95,11 +95,22 @@ fn NoteBar(info: NoteInfo) -> Element {
     let mut name = use_signal(|| info.title.clone());
     let mut folder_s = use_signal(|| folder);
     let mut tags = use_signal(|| info.tags.join(", "));
+    // Narrow screens only: folder, tags and delete are tucked away until asked for.
+    let mut more = use_signal(|| false);
     let id = info.id;
     let (c1, c2, c3) = (core.clone(), core.clone(), core.clone());
 
     rsx! {
-        div { class: "notebar",
+        div { class: if more() { "notebar more-open" } else { "notebar" },
+            button {
+                class: "back",
+                title: "Back to the note list",
+                onclick: move |_| {
+                    let mut l = ui.list_open;
+                    l.set(true);
+                },
+                "‹ Notes"
+            }
             label { r#for: "note-name", "Name" }
             input {
                 id: "note-name",
@@ -113,6 +124,13 @@ fn NoteBar(info: NoteInfo) -> Element {
                     }
                 },
             }
+            button {
+                class: "more-toggle",
+                "aria-expanded": "{more()}",
+                onclick: move |_| more.toggle(),
+                "Details"
+            }
+            div { class: "extra",
             label { r#for: "note-folder", "Folder" }
             input {
                 id: "note-folder",
@@ -149,6 +167,7 @@ fn NoteBar(info: NoteInfo) -> Element {
                     d.set(Some(id));
                 },
                 "Delete"
+            }
             }
         }
     }

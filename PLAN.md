@@ -387,19 +387,24 @@ Exit criteria:
 
 ### Phase 6 — Mobile application
 
-Start with Android:
-- Verify Dioxus mobile support and required platform APIs early.
-- Use app-private storage by default.
-- Sync in the MVP uses the synced-folder backend only (WebDAV is deferred), so Android needs a user-chosen folder that an external sync app (e.g. Syncthing) keeps in sync, reached through the Storage Access Framework. Verify early that this works with the folder provider's guarantees (create-only writes, rename, listing); if it cannot, raise it before committing to Android sync.
-- iOS has no equivalent shared-folder model beyond Files providers; this weighs on the iOS assessment while WebDAV is deferred.
-- Integrate Android secure credential facilities where appropriate.
-- Handle background/foreground transitions and interrupted sync.
-- Make editing, locking, and conflict resolution practical on a small screen.
+Status: Android implemented (this section records what is verified and what needs a device); iOS assessed only. Decisions: `docs/ADR/0006-android-app.md`.
 
-Then assess iOS support against actual framework and platform constraints.
+Start with Android:
+- Verify Dioxus mobile support and required platform APIs early. **Verified:** `dx build --platform android` builds the app (debug and release, arm64) with `just android`; `aapt2` confirms application id `dev.nuvoletta.app`, minSdk 28 and a single permission (`just android-permissions`).
+- Use app-private storage by default. **Done:** vault and settings live in the app-private files directory (path derived without JNI), no storage permission, `allowBackup=false`.
+- Permissions: `INTERNET` only, because Dioxus 0.7 delivers UI updates over a loopback WebSocket and Android refuses loopback sockets without it. The CSP, the network security config and the absence of network code keep it from reaching a network (ADR 0006).
+- Sync in the MVP uses the synced-folder backend only (WebDAV is deferred), so Android needs a user-chosen folder that an external sync app (e.g. Syncthing) keeps in sync, reached through the Storage Access Framework. **Assessed, not implemented:** SAF can in principle meet the provider contract (best-effort create-only, rename where the provider supports it, no symlink information), but it needs Kotlin glue and a confined JNI dependency, is slow without a document-id cache, and cannot be tested without a device. Android sync is disabled with an in-app message; the vault format is unchanged. The recommended design and the alternatives are in ADR 0006. Raised for owner decision before committing to Android sync.
+- iOS has no equivalent shared-folder model beyond Files providers; this weighs on the iOS assessment while WebDAV is deferred.
+- Integrate Android secure credential facilities where appropriate. **Not applicable in the MVP:** passphrase-only unlock (section 11) and no stored credentials.
+- Handle background/foreground transitions and interrupted sync. **Done:** leaving the foreground saves and then locks (never discards; a failed save keeps the vault unlocked and says so on return); sync is safe to interrupt by design. `FLAG_SECURE` hides content from screenshots and recents.
+- Make editing, locking, and conflict resolution practical on a small screen. **Done in CSS and view state:** list and note take turns, wrapping top bar, 44 px touch targets, detail fields behind a toggle; conflict view and dialogs reuse the responsive dialog.
+
+Then assess iOS support against actual framework and platform constraints. **Assessed (ADR 0006):** the app should build with wry on WKWebView, but there is no viable iOS sync backend until WebDAV exists; recommendation is to defer iOS until then.
+
+Needs on-device testing (nothing was run on a device or emulator): launch and create or unlock a vault; the lifecycle lock on home, app switch and screen off; `FLAG_SECURE` (screenshot and recents blank); soft keyboard with the CodeMirror editor (IME, selection, resize); layout at phone sizes; that no note text reaches `adb logcat`; unlock time for a large vault on a mid-range phone.
 
 Exit criteria:
-- The same vault format and sync protocol work across desktop and Android, with no platform-specific weakening of the security model.
+- The same vault format and sync protocol work across desktop and Android, with no platform-specific weakening of the security model. **Status:** the vault format is shared and no security rule was relaxed; the sync half of the criterion is open until a folder backend for Android (SAF) or WebDAV lands.
 
 ### Phase 7 — Hardening and release
 
@@ -465,7 +470,7 @@ Current direction:
 - Attachments: post-MVP. Local note version history: MVP if cheap, else early post-MVP.
 - Platforms: desktop and Android first; iOS feasibility to be validated.
 - Plugins: architecture should allow extensions later; plugin runtime is not MVP scope.
-- Dioxus spike: GO (desktop and Android build and run verified). Editor is a vendored CodeMirror 6 bundle (~600 KB, no CDN), JS dependency tree under supply-chain review.
+- Dioxus spike: GO (desktop and Android build verified; Android run verified only as far as a successful APK build, see Phase 6). Editor is a vendored CodeMirror 6 bundle (~600 KB, no CDN), JS dependency tree under supply-chain review.
 - Unlock: passphrase-only on all platforms in the MVP; platform credential-store integration (desktop keyrings, Android Keystore/biometric unlock) is deferred to post-MVP. Android minimum API level 28.
 - Desktop app: auto-lock after 5 minutes of inactivity by default (configurable); export always warns that it writes plaintext; the webview runs under a strict CSP (ADR 0004).
 - Markdown: pulldown-cmark, CommonMark + tables, strikethrough, task lists, footnotes; `[[Target|alias#fragment]]` wikilinks resolved by full path, then last segment or title (NFC, case-insensitive, ambiguity reported), see docs/ADR/0003-markdown-dialect-and-wikilinks.md.

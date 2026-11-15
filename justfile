@@ -42,6 +42,36 @@ build-core:
 app:
     cargo run -p nuvoletta-app --locked
 
+# Build the debug Android APK (target: aarch64-linux-android phones, x86_64-linux-android emulator; see docs/development.md)
+[group('android')]
+android target="aarch64-linux-android":
+    dx build --platform android --target {{target}} --no-default-features --features mobile --package nuvoletta-app
+    @echo "APK: target/dx/nuvoletta-app/debug/android/app/app/build/outputs/apk/debug/app-debug.apk"
+
+# Fail unless the debug APK requests exactly the INTERNET permission (see ADR 0006)
+[group('android')]
+android-permissions:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    aapt2=$(ls "${ANDROID_HOME:?set ANDROID_HOME}"/build-tools/*/aapt2 | sort -V | tail -n1)
+    apk=target/dx/nuvoletta-app/debug/android/app/app/build/outputs/apk/debug/app-debug.apk
+    perms=$("$aapt2" dump permissions "$apk" | sed -n "s/^uses-permission: name='\(.*\)'.*/\1/p" | grep -v '\.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION$' | sort)
+    echo "permissions: $perms"
+    [ "$perms" = "android.permission.INTERNET" ]
+    badging=$("$aapt2" dump badging "$apk")
+    grep -q "^minSdkVersion:'28'" <<< "$badging"
+
+# Build the release Android bundle (minified; signing is configured outside the repository)
+[group('android')]
+android-release target="aarch64-linux-android":
+    dx bundle --platform android --release --target {{target}} --no-default-features --features mobile --package nuvoletta-app
+
+# Install the debug APK on the connected device or emulator and start it
+[group('android')]
+android-run:
+    adb install -r target/dx/nuvoletta-app/debug/android/app/app/build/outputs/apk/debug/app-debug.apk
+    adb shell am start -n dev.nuvoletta.app/dev.dioxus.main.MainActivity
+
 # Run everything CI checks
 ci: fmt-check clippy test deny build
 

@@ -33,6 +33,9 @@ pub struct Ui {
     pub edit_tick: Signal<u64>,
     /// Note pending delete confirmation.
     pub confirm_delete: Signal<Option<nuvoletta_core::NoteId>>,
+    /// Narrow screens show the note list or the open note, not both: true shows the list.
+    /// Ignored on wide screens, where both are visible.
+    pub list_open: Signal<bool>,
     /// Sync dialog visible.
     pub sync: Signal<bool>,
     /// Conflicting note being reviewed inside the sync dialog.
@@ -60,6 +63,7 @@ impl Ui {
 
     /// Forget everything that mirrors vault content (on lock).
     pub fn reset_for_lock(mut self) {
+        self.list_open.set(true);
         self.query.set(String::new());
         self.tag.set(None);
         self.settings.set(false);

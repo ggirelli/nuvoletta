@@ -16,14 +16,7 @@ pub fn Wordmark() -> Element {
     }
 }
 
-/// Ask the OS for a folder; `None` if cancelled or no dialog is available.
-pub async fn pick_folder(title: &str) -> Option<PathBuf> {
-    rfd::AsyncFileDialog::new()
-        .set_title(title)
-        .pick_folder()
-        .await
-        .map(|h| h.path().to_path_buf())
-}
+pub use crate::platform::pick_folder;
 
 /// A path field with a Browse button.
 #[component]
@@ -62,9 +55,14 @@ pub fn Picker() -> Element {
     let core = use_context::<Core>();
     let ui = use_context::<Ui>();
     let last = core.read(|a| a.settings().last_vault.clone());
-    let mut creating = use_signal(|| false);
+    // Android: the vault location is fixed (app-private). Reaching this screen there means no
+    // vault exists yet (an existing one is opened at start-up), so offer to create it.
+    let fixed = crate::platform::fixed_vault_dir();
+    let mut creating = use_signal(|| fixed.is_some());
     let path = use_signal(|| {
-        last.as_ref()
+        fixed
+            .as_ref()
+            .or(last.as_ref())
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_default()
     });
@@ -117,11 +115,15 @@ pub fn Picker() -> Element {
                     button { r#type: "button", "aria-pressed": "{!creating()}", onclick: move |_| creating.set(false), "Open a vault" }
                     button { r#type: "button", "aria-pressed": "{creating()}", onclick: move |_| creating.set(true), "Create a vault" }
                 }
-                PathField {
-                    id: "vault-path",
-                    label: if creating() { "Folder for the new vault" } else { "Vault folder" },
-                    value: path,
-                    title: "Choose the vault folder",
+                if crate::platform::ANDROID {
+                    p { class: "hint", "The vault is stored in this app's private storage, which other apps cannot read." }
+                } else {
+                    PathField {
+                        id: "vault-path",
+                        label: if creating() { "Folder for the new vault" } else { "Vault folder" },
+                        value: path,
+                        title: "Choose the vault folder",
+                    }
                 }
                 if creating() {
                     label { r#for: "new-pass", "Passphrase (at least 12 characters)" }
@@ -199,14 +201,16 @@ pub fn Unlock() -> Element {
                 }
                 div { class: "actions",
                     button { class: "primary", r#type: "submit", "Unlock" }
-                    button {
-                        r#type: "button",
-                        onclick: move |_| {
-                            if let Err(e) = c.act(|a| a.close_vault(false)) {
-                                ui.error(e.user_message());
-                            }
-                        },
-                        "Choose another vault"
+                    if !crate::platform::ANDROID {
+                        button {
+                            r#type: "button",
+                            onclick: move |_| {
+                                if let Err(e) = c.act(|a| a.close_vault(false)) {
+                                    ui.error(e.user_message());
+                                }
+                            },
+                            "Choose another vault"
+                        }
                     }
                 }
             }

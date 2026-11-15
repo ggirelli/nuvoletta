@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+        The only permission is INTERNET, and it is not used to reach the network. Dioxus 0.7 delivers
+        UI updates to the webview over a WebSocket on 127.0.0.1, and Android refuses to create any
+        IP socket, loopback included, without this permission. The page's Content-Security-Policy
+        allows connections to 127.0.0.1 only, the network security config below allows cleartext to
+        127.0.0.1 only, and the app has no network code (docs/ADR/0006-android-app.md).
+        No storage, camera, location or other permissions are requested: the vault lives in the
+        app-private files directory.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- allowBackup=false keeps the vault out of Google and adb backups and device-to-device transfer (it also disables the API 31 data extraction rules). -->
+    <application android:hasCode="true" android:icon="@mipmap/ic_launcher"
+        android:extractNativeLibs="true"
+        android:allowNativeHeapPointerTagging="false"
+        android:allowBackup="false"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme"
+        android:networkSecurityConfig="@xml/network_security_config">
+        <activity android:configChanges="orientation|screenLayout|screenSize|keyboardHidden"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize"
+            android:label="@string/app_name" android:name="dev.dioxus.main.MainActivity">
+            <meta-data android:name="android.app.lib_name" android:value="main" />
+            <meta-data android:name="android.app.func_name" android:value="ANativeActivity_onCreate" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -20,10 +20,7 @@ pub struct Core {
 impl Core {
     /// Build the core with settings loaded from the user's config directory.
     pub fn new(rev: Signal<u64>) -> Self {
-        let settings_path = dirs::config_dir()
-            .unwrap_or_else(std::env::temp_dir)
-            .join("nuvoletta")
-            .join("settings.json");
+        let settings_path = crate::platform::settings_path();
         let settings = Settings::load(&settings_path);
         let app = App::new(Arc::new(SystemClock::new()), settings);
         Self {
