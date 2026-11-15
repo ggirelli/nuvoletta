@@ -1,6 +1,6 @@
 # Nuvoletta Sync Protocol (v1 proposal)
 
-Status: Draft — Phase 0, owner decisions applied, pending cross-review
+Status: Draft rev 2 — Phase 0, owner decisions applied, cross-review gaps addressed (tombstone ids, local revision cache, segment retry, forks, stray copies); pending owner approval
 
 Goal: converge devices through a "dumb" shared store (externally synced folder first, WebDAV second) with no atomicity across files, no ordering, delayed or partial propagation, and no conditional writes. Envelope and key details are in `CRYPTO_FORMAT.md`; threats in `THREAT_MODEL.md`.
 
@@ -34,6 +34,8 @@ Goal: converge devices through a "dumb" shared store (externally synced folder f
 - `device_id`: 128-bit random generated at first run of a vault on a device, stored locally (`sync-state/device-id`). Cloning a vault directory to a second device without regenerating the ID creates a fork (section 10.4); the app must regenerate on "restore from backup / copy" and detect it by comparing own remote log against local journal.
 - `note_id`: 128-bit random, stable for a note's life.
 - `object_id`: 128-bit random per note revision (the immutable "version id" of that content).
+- `tombstone_id`: 128-bit random per DELETE, drawn from the same space as `object_id`. It names the deletion as a vertex of the version DAG (section 5.3) so it can be a parent; no object file exists for it.
+- In this document a **revision id** is either an `object_id` (PUT) or a `tombstone_id` (DELETE).
 - Vault-wide logical identity is `vault_id` (header).
 
 ## 4. Content objects
@@ -57,19 +59,19 @@ A log is a sequence of immutable segment files because plain files cannot be saf
 | 2 | kind: 1 PUT, 2 DELETE, 3 CHECKPOINT |
 | 3 | time: i64 ms, informational only, never used for ordering or resolution |
 | 4 | note_id: bstr(16) (PUT, DELETE) |
-| 5 | object_id: bstr(16) (PUT) |
+| 5 | rev_id: bstr(16): `object_id` (PUT) or `tombstone_id` (DELETE) |
 | 6 | ct_hash: bstr(32) SHA-256 of the object file (PUT) |
-| 7 | parents: array of bstr(16): the revision ids this change is based on (PUT, DELETE); empty for a new note |
+| 7 | parents: array of bstr(16): the revision ids (`object_id` or `tombstone_id`) this change is based on (PUT, DELETE); empty for a new note |
 | 8 | seen: map device_id -> [seq, entry_hash] (CHECKPOINT; may be attached to any entry) |
 
 - `entry_hash = SHA-256("nuvoletta/v1/log-entry" ‖ prev ‖ bytes of the entry's canonical CBOR encoding as stored)`. Chain = each entry commits to all earlier ones; removing or reordering history of a device is detectable by anyone who remembered a later hash.
 - Authentication and confidentiality: the segment is AEAD-protected with the log subkey K_log (note ids, object ids and the version graph are not visible to the provider). AAD binds vault, type, device scope, segment id (`CRYPTO_FORMAT.md` section 4).
-- A reader verifies, per segment: envelope valid; `scope_id` equals the directory's device_id; entries' seq contiguous starting at the file's `first_seq`; first `prev` equals the stored hash of seq-1 (or zero); each `ct_hash`/`note_id` well-formed.
+- A reader verifies, per segment: envelope valid; `scope_id` equals the directory's device_id; entries' seq contiguous starting at the file's `first_seq`; first `prev` equals the stored hash of seq-1 (or zero); each `ct_hash`/`note_id`/`rev_id` well-formed; PUT has `ct_hash`, DELETE has none.
 - **Decided:** All devices share the DEK, so any DEK holder can forge log entries claiming another device (N5). Accepted for MVP and documented; per-device Ed25519 signing keys come with DEK rotation/revocation work.
 
 ### 5.3 Versions and the version DAG
 
-Every PUT introduces revision `object_id` with `parents` = revisions it was derived from. DELETE introduces a tombstone with `parents` = the revisions it removes. The set of verified entries from all devices forms a DAG per `note_id`. The **heads** of a note are revisions or tombstones that are not a parent of any other entry. One head = no conflict. More than one head = conflict (section 7). Parent ids never need the parents' content to be present.
+Every PUT introduces revision `object_id` with `parents` = revisions it was derived from. DELETE introduces tombstone `tombstone_id` with `parents` = the revisions it removes. A `rev_id` is introduced by exactly one entry; a second entry introducing an already-known `rev_id` for a different `note_id`, or with different `parents`/`ct_hash`, is invalid and reported (an entry repeating an identical `note_id`, `parents` and `ct_hash` triple is accepted: this is how a forked device re-emits revisions, section 10.4). The set of verified entries from all devices forms a DAG per `note_id`. The **heads** of a note are revisions or tombstones that are not a parent of any other entry. One head = no conflict. More than one head = conflict (section 7). Parent ids never need the parents' content to be present.
 
 ## 6. Local state and the sync cycle
 
@@ -78,14 +80,17 @@ Every PUT introduces revision `object_id` with `parents` = revisions it was deri
 | File | Contents |
 |------|----------|
 | `device-id` | device_id (plaintext hex; not secret) |
-| `journal` | own entries not yet confirmed uploaded (seq, entry bytes), next seq, last own entry_hash |
-| `peers` | per device: highest verified seq, its entry_hash, last segment name, last_checkpoint seen, first/last time seen |
+| `journal` | own entries not yet confirmed uploaded (seq, entry bytes), next seq, last own entry_hash, and the **sealed bytes** of the segment being uploaded, if any (section 6.3 step 2) |
+| `peers` | per device: highest verified seq, its entry_hash, last segment name, last_checkpoint seen, first/last time seen, and a `fork` record if one was detected (section 10.4) |
 | `notes` | per note_id: `base` (revision id last merged and uploaded/applied locally), heads, `dirty` flag, conflict flag, local `ct_hash` |
 | `inventory` | last remote listing (name, size, etag, seen_at) used to skip unchanged files |
 | `pending` | referenced objects not yet fetched; segments buffered after a gap |
+| `revs/<object_id>.nvobj` | local revision cache (see below) |
 | `max-header-gen` | highest header_gen seen |
 
-Losing `peers`/`notes`/`inventory` is recoverable by re-reading remote logs (devices re-verify chains from seq 1). Losing `journal` loses unsent edits only if the notes themselves are also lost; otherwise the next scan finds notes whose local revision is not in the own log and re-emits entries.
+**Local revision cache.** The vault's `notes/` directory holds only the latest revision of each note (`STORAGE_FORMAT.md`), but merging needs older ones: the common ancestor for 7.2 and every head of a conflict for 7.3. `revs/` holds verbatim copies of type 1 object envelopes (the exact remote bytes, so `SHA-256(file) == ct_hash`; they are already encrypted with K_note and are not re-wrapped in type 4). Retained per note: the current `base`, every head, every direct parent of a head, and the last K revisions (section 9 rule 3). Other entries may be pruned locally at any time. Everything in `revs/` is a cache: a missing entry is re-fetched from the remote, and only if the remote copy was garbage collected does it degrade a merge to a visible conflict (section 9 rule 6).
+
+Losing `peers`/`notes`/`inventory`/`revs` is recoverable by re-reading remote logs (devices re-verify chains from seq 1). Losing `journal` loses unsent edits only if the notes themselves are also lost; otherwise the next scan finds notes whose local revision is not in the own log and re-emits entries.
 
 ### 6.2 Local edit
 
@@ -94,7 +99,8 @@ On save: write the new revision envelope locally (atomic replace) with a fresh `
 ### 6.3 Sync cycle (idempotent; safe to interrupt at any point)
 
 1. **Push objects**: for each journal PUT, upload the object file if absent (`put_new`). Ensure the file is fully written before step 2.
-2. **Append log**: write one new segment with the journaled entries (plus a CHECKPOINT every rule in section 10.2). Remove from the journal only after `list` shows the segment present with the expected size and, optionally, `get` verifies it.
+2. **Append log**: seal one new segment with the journaled entries (plus a CHECKPOINT every rule in section 10.2) and persist the sealed bytes in the journal **before** uploading, so every retry uploads byte-identical content under the same name `<first_seq>`. Remove the entries from the journal only after `list` shows the segment present with the expected size and, optionally, `get` verifies it.
+   - Retry after an interrupted upload: if `d/<own>/l/<first_seq>.nvlog` already exists, `get` it. Same bytes as the persisted segment: confirmed. A `.tmp-` leftover of our own: delete it and upload again. Different bytes that authenticate and carry the same entries (same `entry_hash` for every seq, e.g. sealed before the journal persisted the bytes): confirmed; keep the remote file and drop ours. Anything else that authenticates is a fork of our own device ID (section 10.4). A file that fails AEAD is "not yet arrived" (partial propagation); wait and retry, never overwrite it.
 3. **List**: list `d/*/l/` and `o/` (use inventory to avoid refetching).
 4. **Pull logs**: for each other device, fetch segments with `first_seq` above the stored position, verify (5.2), and apply entries in seq order. If a segment is missing (gap) or fails AEAD, stop that device's stream at the gap, record `pending`, retry next cycle. Truncated/partial files fail AEAD and are treated as not yet arrived; after N retries across M hours surface "possibly corrupted or withheld" in status.
 5. **Pull objects**: for each applied PUT whose object is not local, fetch `o/..`, verify `SHA-256(file) == ct_hash` and envelope `object_id`, `scope_id == note_id`, then decrypt. Missing object: entry stays applied in the graph, the revision is "dangling" (not shown, user told), retried.
@@ -135,7 +141,7 @@ Path and title are fields inside the revision, so rename is a normal PUT (one ob
 ## 8. Foreign and sync-tool files
 
 - Only files matching the strict name grammar are protocol files. Others (`name (conflicted copy)`, `.sync-conflict-20240101-...`, `name (1).nvlog`, `*.tmp`, `*.part`, `.DS_Store`) are listed as "stray" in a diagnostics screen and ignored; never read as truth, never deleted.
-- Exception: a stray file whose name starts with a valid 32-hex id and whose content authenticates (envelope valid under the vault key, vault_id matches) is treated as a copy. Because identity comes from the authenticated header, an identical copy is deduplicated by `object_id`; a copy with the **same** `(device_id, first_seq)` but different bytes is an **equivocation/fork** (section 10.4) and is surfaced, not applied. Rationale: sync tools create conflicted copies when two sides wrote the same path, which our single-writer scheme should never do except for clones or restores.
+- Exception: a stray file inside a protocol directory whose name starts with the id the grammar requires there (8 hex in `h/`, 16 hex `first_seq` in `d/<device_id>/l/`, 32 hex in `o/xx/` and `s/<device_id>/`) followed by a non-hex character, whose extension is the one expected there, and whose content authenticates (envelope valid under the vault key, vault_id matches) is treated as a copy. Because identity comes from the authenticated header, an identical copy is deduplicated by `object_id`; for a segment the identity is the authenticated `(scope_id = device_id, seq of its first entry)`, never the name; a copy with the **same** `(device_id, first_seq)` but different entries (different `entry_hash` at some seq; differing bytes with identical entries are just a re-seal, section 6.3 step 2) is an **equivocation/fork** (section 10.4) and is surfaced, not applied. Rationale: sync tools create conflicted copies when two sides wrote the same path, which our single-writer scheme should never do except for clones or restores.
 - **Decided:** authenticated stray copies are accepted for objects (content-addressed by `object_id` and `ct_hash`) and report-only for log segments.
 - The local synced-folder backend must not follow symlinks out of the root, must reject names containing path separators or `..`, and must treat case-insensitive filesystems as equal names (all names are lowercase hex).
 
@@ -143,7 +149,7 @@ Path and title are fields inside the revision, so rename is a normal PUT (one ob
 
 Immutable objects and segments accumulate; deletion is the only destructive step, so it is deliberately conservative.
 
-1. Only the **writer** deletes its own objects/segments (matches single-writer; avoids races). Objects are identified by `object_id` in its own log (`kind=PUT`, same `device_id` directory? objects are not per-device directories; the writer is known from the log entry that introduced it).
+1. Only the **writer** deletes its own objects/segments (matches single-writer; avoids races). Segments live under the writer's `d/<device_id>/` directory. Objects live in the shared `o/` tree, so the writer of an object is the device whose log contains the PUT entry introducing its `object_id`; a device only deletes objects introduced by its own log (plus its own unreferenced orphans, rule 5, which it knows from its journal).
 2. A revision R is collectable when all hold: (a) it is not a head and not a head's direct parent, (b) it is superseded by an entry at (device, seq) such that every device with a recent checkpoint (last seen within 90 days) has a recorded `seen` ≥ that position, and (c) a grace period (default 30 days) has passed since the superseder was written.
 3. Keep at least the last K = 5 revisions per note (supports local history and 3-way bases).
 4. Tombstoned notes: content objects follow rules 2 and 3 relative to the tombstone; tombstone entries stay in the log.
@@ -176,7 +182,12 @@ f. Optional mitigation, post-MVP: user-verifiable "state fingerprint" (hash of a
 
 ### 10.4 Fork handling
 
-A fork (same `device_id` and seq with different hashes, from cloned vault directories or restored backups) is surfaced as "this device ID was used twice". Both branches are verified; entries from the forked branch are applied as if from separate devices, tagged by (device_id, branch hash); the app offers "regenerate device ID" on the clone. Never auto-delete either branch.
+A fork (same `device_id` and seq with different `entry_hash`, from cloned vault directories or restored backups) is surfaced as "this device ID was used twice". **Decided (MVP):** forks are detected and frozen, not merged as separate branches:
+
+1. `peers` stays keyed by `device_id`. On detection the reader records `fork = {seq: f, hashes: [...]}` for that device (f = first seq with two different verified entries) and stops applying that device's entries at seq f-1, for every branch. The rule depends only on the fork point, so every device that has seen both branches computes the same DAG. Entries at or after f that this device had already applied are removed from the DAG (it is recomputed from verified entries); local note content they installed is kept as local content, never deleted, and the affected notes are marked "needs attention".
+2. No segment of either branch is deleted, by anyone. Their objects stay retained (they are referenced by authenticated entries) and remain listable in the diagnostics screen.
+3. A device that finds a fork of **its own** device_id (own remote log disagrees with its journal or confirmed state, or section 6.3 step 2 finds a foreign segment under its name) stops writing to that log, generates a new device_id and re-emits, under the new log, PUT/DELETE entries for every local revision not reachable from the frozen prefix. Re-emission reuses the original `rev_id`, `ct_hash` and `parents`, so peers that installed that content see the same revision ids again and the notes return to normal (fast-forward or regular conflict). Each clone does this, so no edit made on any branch is lost.
+4. Limit: a device that has only seen one branch keeps applying it until the other becomes visible (same class as split view, 10.3 d).
 
 ## 11. Compaction and snapshots
 
@@ -204,9 +215,9 @@ Notation: `R0` is a revision id; `A#n` is device A's log entry n. Both devices s
 
 ### S3. Delete vs edit
 
-1. A deletes N: `A#9 DELETE N parents[R0]`. B edits: R1 parents [R0].
-2. Heads {tombstone(A#9), R1}. This is a conflict: N is shown in a "needs attention" list, not deleted on B and not resurrected silently on A (A shows it as "deleted here, edited elsewhere").
-3. Resolution "keep": PUT R2 parents [R1, A#9 tombstone]; all devices converge on R2. Resolution "delete": DELETE with parents [R1, tombstone]; R1 stays retained through the grace period (section 9) so the user can undo.
+1. A deletes N: `A#9 DELETE N T1 parents[R0]` (T1 is the tombstone id). B edits: R1 parents [R0].
+2. Heads {T1, R1}. This is a conflict: N is shown in a "needs attention" list, not deleted on B and not resurrected silently on A (A shows it as "deleted here, edited elsewhere").
+3. Resolution "keep": PUT R2 parents [R1, T1]; all devices converge on R2. Resolution "delete": DELETE T2 with parents [R1, T1]; R1 stays retained through the grace period (section 9) so the user can undo.
 
 ### S4. Sync-tool "conflicted copy" files
 
