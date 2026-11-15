@@ -11,6 +11,7 @@ mod editor;
 mod picker;
 mod root;
 mod sidebar;
+mod sync;
 mod ui;
 
 use dioxus::desktop::tao::window::Icon;

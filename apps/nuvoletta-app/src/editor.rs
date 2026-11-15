@@ -19,9 +19,10 @@ pub fn Workspace() -> Element {
 
     // Push the open note into the editor whenever the open note changes.
     let c = core.clone();
-    let open_id = use_memo(move || c.read(|a| a.open_info().map(|i| i.id)));
+    // The generation changes when sync replaced the content of the open note.
+    let open_id = use_memo(move || c.read(|a| a.open_info().map(|i| (i.id, i.generation))));
     let c = core.clone();
-    use_effect(move || match open_id() {
+    use_effect(move || match open_id().map(|(id, _)| id) {
         Some(id) => {
             let text = c.peek(|a| a.buffer().unwrap_or_default().to_owned());
             bridge::set_doc(&id.to_string(), &text);
@@ -43,7 +44,12 @@ pub fn Workspace() -> Element {
     rsx! {
         main { class: "workspace",
             if let Some(info) = info.clone() {
-                NoteBar { key: "{info.id}", info }
+                NoteBar { key: "{info.id}", info: info.clone() }
+                if info.changed_by_sync {
+                    div { class: "banner", role: "alert",
+                        span { "This note was updated by sync while you were editing it. Your edits are kept here; saving replaces the synced version (it stays in the sync history)." }
+                    }
+                }
                 if let Some(err) = core.read(|a| a.open_info().and_then(|i| i.save_error)) {
                     div { class: "banner", role: "alert",
                         span { "This note could not be saved: {err}. Your edits are kept in the editor and saving is retried." }

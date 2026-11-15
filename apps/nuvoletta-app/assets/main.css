@@ -221,3 +221,16 @@ label { display: block; font-weight: 600; margin: 12px 0 4px; }
 .editor:focus-within { box-shadow: inset 0 0 0 2px var(--nv-focus); }
 
 .dialog .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+/* Sync */
+.syncbtn { max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.syncbtn.bad { color: var(--nv-danger); border-color: var(--nv-danger); font-weight: 600; }
+.dialog.wide { width: min(760px, 100%); }
+.dialog .plain { list-style: none; margin: 0; padding: 0; }
+.dialog .plain li { margin: 6px 0; }
+.notice { margin: 8px 0; }
+.notice button { margin-top: 4px; }
+pre.diff { background: var(--nv-raised); border: 1px solid var(--nv-border); border-radius: 6px; padding: 8px; max-height: 220px; overflow: auto; font-family: var(--nv-mono); font-size: 0.85em; white-space: pre-wrap; margin: 4px 0; }
+pre.diff .added { background: var(--nv-ok-bg); }
+pre.diff .removed { background: var(--nv-danger-bg); }
+.dialog code { font-family: var(--nv-mono); overflow-wrap: anywhere; }
