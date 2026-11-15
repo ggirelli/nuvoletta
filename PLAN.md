@@ -420,11 +420,11 @@ Exit criteria:
 - Dependency and supply-chain review.
 - Fuzzing and property-based testing.
 - Security-focused code review and independent human security audit (milestone before relying on Nuvoletta for sensitive material).
-- Backup, restore, device loss, and recovery-key exercises.
+- Backup, restore, device loss, and recovery-key exercises. **Done** (`crates/nuvoletta-app-core/tests/recovery.rs`; procedures in `docs/user/`). Known gaps found: no in-app join (the vault header is copied by hand from the sync folder's `h/`), no in-app adoption of a newer header after a passphrase change on another device, and a corrupt `journal` stops sync until deleted.
 - Performance and battery testing.
 - Accessibility and usability review.
 - Reproducible release process and signed application updates.
-- Clear privacy policy and documentation of metadata leakage and security limitations.
+- Clear privacy policy and documentation of metadata leakage and security limitations. **Done** (`docs/user/privacy-policy.md`, `docs/user/security-and-privacy.md`; states that the app is not audited).
 
 Do not describe the product as audited or fully secure unless an appropriate independent review has actually taken place.
 

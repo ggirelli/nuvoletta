@@ -20,5 +20,6 @@ nuvoletta is an encrypted notes app written in Rust with Dioxus. Your notes are 
 
 - [Plan](plan.md)
 - [Threat model](THREAT_MODEL.md), [Crypto format](CRYPTO_FORMAT.md), [Sync protocol](SYNC_PROTOCOL.md)
+- [User guide](user/index.md)
 - [Development](development.md)
 - [Source code](https://github.com/ggirelli/nuvoletta)
