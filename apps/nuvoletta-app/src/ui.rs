@@ -33,6 +33,12 @@ pub struct Ui {
     pub edit_tick: Signal<u64>,
     /// Note pending delete confirmation.
     pub confirm_delete: Signal<Option<nuvoletta_core::NoteId>>,
+    /// Sync dialog visible.
+    pub sync: Signal<bool>,
+    /// Conflicting note being reviewed inside the sync dialog.
+    pub conflict: Signal<Option<nuvoletta_core::NoteId>>,
+    /// Wall-clock time (ms), refreshed periodically so relative times stay current.
+    pub clock_ms: Signal<i64>,
 }
 
 impl Ui {
@@ -57,6 +63,8 @@ impl Ui {
         self.query.set(String::new());
         self.tag.set(None);
         self.settings.set(false);
+        self.sync.set(false);
+        self.conflict.set(None);
         self.confirm_delete.set(None);
         self.recovery_key.set(None);
         self.notice.set(None);

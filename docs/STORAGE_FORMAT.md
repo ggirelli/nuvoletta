@@ -10,7 +10,9 @@ operated on. Sync state (`SYNC_PROTOCOL.md`, Phase 4) is described in section 4.
 <vault>/
   .nuvoletta/
     vault-header            236-byte vault header (CRYPTO_FORMAT section 2)
-    device-state/           reserved, created when first needed
+    device-state/           local, never synced, non-secret: sync.json (sync on/off and the sync
+                            folder path), sync-notices.json (unacknowledged integrity warnings);
+                            written by nuvoletta-app-core, plain JSON, created when first needed
     sync-state/             written by nuvoletta-sync (section 4): device-id (plain hex), journal,
                             peers, notes, inventory, pending, max-header-gen (envelope type 4);
                             revs/ caches verbatim type 1 revisions (SYNC_PROTOCOL section 6.1)

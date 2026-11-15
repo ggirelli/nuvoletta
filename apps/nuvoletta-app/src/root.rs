@@ -7,6 +7,7 @@ use crate::dialogs::{ForcedPassphrase, LockBlocked, RecoveryScreen, Settings};
 use crate::editor::Workspace;
 use crate::picker::{Picker, Unlock};
 use crate::sidebar::Sidebar;
+use crate::sync::{SyncControls, SyncDialog};
 use crate::ui::Ui;
 use dioxus::desktop::tao::event::{Event, WindowEvent};
 use dioxus::desktop::use_wry_event_handler;
@@ -29,6 +30,9 @@ pub fn Root() -> Element {
         tag: Signal::new(None),
         edit_tick: Signal::new(0),
         confirm_delete: Signal::new(None),
+        sync: Signal::new(false),
+        conflict: Signal::new(None),
+        clock_ms: Signal::new(crate::sync::wall_ms()),
     });
 
     // JS -> Rust messages.
@@ -65,8 +69,36 @@ pub fn Root() -> Element {
                             lb.set(Some(msg));
                         }
                     }
+                    TickOutcome::LockPending => c.bump(),
+                    TickOutcome::Sync(ev) => crate::sync::handle_event(&c, ui, ev),
                 }
             }
+        }
+    });
+
+    // Collect the result of a running sync cycle quickly (the cycle itself runs on a worker
+    // thread, so the UI never waits for it).
+    let c = core.clone();
+    use_future(move || {
+        let c = c.clone();
+        async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                if c.peek(nuvoletta_app_core::App::sync_in_flight)
+                    && let Some(ev) = c.quiet(nuvoletta_app_core::App::poll_sync)
+                {
+                    crate::sync::handle_event(&c, ui, ev);
+                }
+            }
+        }
+    });
+
+    // Keep relative times ("synced 3 min ago") current.
+    use_future(move || async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(crate::sync::CLOCK_REFRESH_SECS)).await;
+            let mut t = ui.clock_ms;
+            t.set(crate::sync::wall_ms());
         }
     });
 
@@ -86,6 +118,7 @@ pub fn Root() -> Element {
     let must_change = core.read(nuvoletta_app_core::App::must_change_passphrase);
     let key_pending = ui.recovery_key.read().is_some();
     let settings_open = *ui.settings.read();
+    let sync_open = *ui.sync.read();
     let lock_blocked = ui.lock_blocked.read().clone();
     let notice = ui.notice.read().clone();
 
@@ -121,6 +154,7 @@ pub fn Root() -> Element {
                             }
                         }
                         if settings_open { Settings {} }
+                        if sync_open { SyncDialog {} }
                     }
                 },
             }
@@ -135,6 +169,12 @@ pub fn Root() -> Element {
 /// user decides (retry, keep working, or lock and discard).
 pub fn lock(core: &Core, ui: Ui, force: bool) {
     match core.act(|a| a.lock(force)) {
+        Ok(()) if core.peek(nuvoletta_app_core::App::phase) == Phase::Unlocked => {
+            // A sync cycle has the vault: the core locks when it ends (after saving).
+            let mut lb = ui.lock_blocked;
+            lb.set(None);
+            ui.info("Locking as soon as the sync in progress has finished.");
+        }
         Ok(()) => {
             bridge::destroy();
             ui.reset_for_lock();
@@ -281,6 +321,7 @@ fn Topbar() -> Element {
             }
             span { class: if bad { "status bad" } else { "status" }, role: "status", "{status}" }
             div { class: "spacer" }
+            SyncControls {}
             button {
                 onclick: move |_| {
                     let mut s = ui.settings;

@@ -2957,6 +2957,7 @@ dependencies = [
  "nuvoletta-crypto",
  "nuvoletta-markdown",
  "nuvoletta-storage",
+ "nuvoletta-sync",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",

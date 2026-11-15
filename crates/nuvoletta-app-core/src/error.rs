@@ -21,6 +21,15 @@ pub enum Error {
     /// Invalid user input.
     #[error("{0}")]
     Invalid(&'static str),
+    /// A sync cycle currently has exclusive use of the vault; retry in a moment.
+    #[error("a sync cycle is running; try again in a moment")]
+    SyncBusy,
+    /// Sync is not set up (no folder, or disabled).
+    #[error("sync is not set up for this vault")]
+    SyncNotConfigured,
+    /// Sync failed.
+    #[error("sync: {0}")]
+    Sync(String),
     /// Settings could not be read or written.
     #[error("settings: {0}")]
     Settings(String),

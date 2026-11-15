@@ -3,13 +3,16 @@
 use crate::clock::Clock;
 use crate::error::{Error, Result};
 use crate::settings::Settings;
+use crate::sync::{SyncSession, SyncTiming};
+use crate::sync_settings::SyncSettings;
+use crate::sync_types::SyncEvent;
 use crate::tree::{TreeRow, build_tree};
 use nuvoletta_core::{Note, NoteId, NotePath, now_ms};
 use nuvoletta_crypto::{KdfParams, RecoveryKey};
 use nuvoletta_markdown::{Index, RenderOptions, TagCount, render_html};
 use nuvoletta_storage::portable::{ExportReport, ImportReport, export_markdown, import_markdown};
 use nuvoletta_storage::{Locked, NoteSummary, Unlocked};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use zeroize::Zeroizing;
@@ -72,6 +75,11 @@ pub struct NoteInfo {
     pub dirty: bool,
     /// Why the last save failed; the buffer is kept.
     pub save_error: Option<String>,
+    /// Sync replaced the stored version while there were unsaved edits; saving replaces the
+    /// synced version (it stays in sync history).
+    pub changed_by_sync: bool,
+    /// Bumped when sync replaced the editor content; the editor must reload it.
+    pub generation: u64,
 }
 
 /// What a call to [`App::tick`] did.
@@ -88,33 +96,49 @@ pub enum TickOutcome {
     /// The inactivity period elapsed but unsaved edits could not be written, so the vault was
     /// **not** locked. The UI must tell the user and offer retry or an explicit forced lock.
     LockBlocked(String),
+    /// The inactivity period elapsed while a sync cycle was running: the vault locks as soon as
+    /// the cycle hands it back (after saving unsaved edits).
+    LockPending,
+    /// Something happened to the sync cycle (started, finished, or a pending lock completed).
+    Sync(SyncEvent),
 }
 
-struct OpenNote {
+pub(crate) struct OpenNote {
     /// The stored revision (its body is the last saved body).
-    note: Note,
+    pub(crate) note: Note,
     /// The editor content.
-    buffer: Zeroizing<String>,
-    last_edit: Duration,
-    save_error: Option<String>,
+    pub(crate) buffer: Zeroizing<String>,
+    pub(crate) last_edit: Duration,
+    pub(crate) save_error: Option<String>,
+    /// Sync replaced the stored version while the buffer had unsaved edits (see `sync.rs`).
+    pub(crate) changed_by_sync: bool,
+    /// Bumped when sync replaces the buffer, so the editor reloads it.
+    pub(crate) generation: u64,
 }
 
 impl OpenNote {
-    fn dirty(&self) -> bool {
+    pub(crate) fn dirty(&self) -> bool {
         *self.buffer != self.note.body
     }
 }
 
-struct Session {
-    vault: Unlocked,
-    index: Index,
-    open: Option<OpenNote>,
-    last_activity: Duration,
+pub(crate) struct Session {
+    /// The vault. `None` only while a sync cycle on the worker thread has exclusive use of it;
+    /// operations that need it then fail with [`Error::SyncBusy`].
+    pub(crate) vault: Option<Unlocked>,
+    /// The vault directory (known even while the vault is away).
+    pub(crate) root: PathBuf,
+    /// The note list as of the moment the vault was handed to the sync worker.
+    pub(crate) listing: Vec<NoteSummary>,
+    pub(crate) index: Index,
+    pub(crate) open: Option<OpenNote>,
+    pub(crate) last_activity: Duration,
     /// Set after a recovery-key unlock: the user must choose a new passphrase.
-    must_change_passphrase: bool,
+    pub(crate) must_change_passphrase: bool,
+    pub(crate) sync: SyncSession,
 }
 
-enum State {
+pub(crate) enum State {
     NoVault,
     Locked(Box<Locked>),
     Unlocked(Box<Session>),
@@ -127,7 +151,9 @@ pub struct App {
     settings: Settings,
     kdf: KdfParams,
     debounce: Duration,
-    state: State,
+    pub(crate) state: State,
+    pub(crate) sync_cfg: SyncSettings,
+    pub(crate) sync_timing: SyncTiming,
 }
 
 impl App {
@@ -140,6 +166,8 @@ impl App {
             kdf: KdfParams::DEFAULT,
             debounce: DEFAULT_AUTOSAVE_DEBOUNCE,
             state: State::NoVault,
+            sync_cfg: SyncSettings::default(),
+            sync_timing: SyncTiming::default(),
         }
     }
 
@@ -182,11 +210,15 @@ impl App {
         match &self.state {
             State::NoVault => None,
             State::Locked(l) => Some(l.root()),
-            State::Unlocked(s) => Some(s.vault.root()),
+            State::Unlocked(s) => Some(&s.root),
         }
     }
 
-    fn session(&self) -> Result<&Session> {
+    pub(crate) fn clock_now(&self) -> Duration {
+        self.clock.now()
+    }
+
+    pub(crate) fn session(&self) -> Result<&Session> {
         match &self.state {
             State::Unlocked(s) => Ok(s),
             State::Locked(_) => Err(Error::Locked),
@@ -194,7 +226,7 @@ impl App {
         }
     }
 
-    fn session_mut(&mut self) -> Result<&mut Session> {
+    pub(crate) fn session_mut(&mut self) -> Result<&mut Session> {
         match &mut self.state {
             State::Unlocked(s) => Ok(s),
             State::Locked(_) => Err(Error::Locked),
@@ -273,14 +305,18 @@ impl App {
 
     fn install(&mut self, vault: Unlocked, must_change: bool) -> Result<()> {
         let mut session = Session {
-            vault,
+            root: vault.root().to_path_buf(),
+            vault: Some(vault),
+            listing: Vec::new(),
             index: Index::new(),
             open: None,
             last_activity: self.clock.now(),
             must_change_passphrase: must_change,
+            sync: SyncSession::default(),
         };
         session.rebuild_index();
         self.state = State::Unlocked(Box::new(session));
+        self.sync_on_unlock();
         Ok(())
     }
 
@@ -297,14 +333,24 @@ impl App {
             State::NoVault => return Err(Error::NoVault),
             State::Locked(_) => return Ok(()),
             State::Unlocked(s) => {
+                if s.vault.is_none() {
+                    // A sync cycle has the vault: the lock happens when it hands it back.
+                    s.sync.lock_after = Some(force || s.sync.lock_after == Some(true));
+                    return Ok(());
+                }
                 if !force {
                     s.save(now).map_err(|e| Error::Unsaved(Box::new(e)))?;
                 }
             }
         }
         if let State::Unlocked(s) = std::mem::replace(&mut self.state, State::NoVault) {
+            let mut s = *s;
             // Moving the vault out drops (and zeroizes) the index and the buffer.
-            self.state = State::Locked(Box::new(s.vault.lock()));
+            self.state = match s.vault.take() {
+                Some(v) => State::Locked(Box::new(v.lock())),
+                // Unreachable (checked above); keep the session rather than lose the vault.
+                None => State::Unlocked(Box::new(s)),
+            };
         }
         Ok(())
     }
@@ -315,6 +361,9 @@ impl App {
     /// As [`App::lock`].
     pub fn close_vault(&mut self, force: bool) -> Result<()> {
         if !matches!(self.state, State::NoVault) {
+            // Closing waits for an in-flight sync cycle (it is short and safe to wait for), so
+            // the unsaved buffer can be written before the vault is dropped.
+            self.wait_sync();
             self.lock(force)?;
             self.state = State::NoVault;
         }
@@ -334,7 +383,7 @@ impl App {
     pub fn change_passphrase(&mut self, new_passphrase: &str) -> Result<()> {
         let kdf = self.kdf;
         let s = self.session_mut()?;
-        s.vault.change_passphrase(new_passphrase, kdf)?;
+        s.vault_mut()?.change_passphrase(new_passphrase, kdf)?;
         s.must_change_passphrase = false;
         Ok(())
     }
@@ -345,7 +394,10 @@ impl App {
     /// # Errors
     /// Wrong passphrase or writing fails.
     pub fn rotate_recovery_key(&mut self, passphrase: &str) -> Result<Zeroizing<String>> {
-        let key = self.session_mut()?.vault.rotate_recovery_key(passphrase)?;
+        let key = self
+            .session_mut()?
+            .vault_mut()?
+            .rotate_recovery_key(passphrase)?;
         Ok(key.to_display_string())
     }
 
@@ -355,11 +407,12 @@ impl App {
         self.session().map_or_else(
             |_| Vec::new(),
             |s| {
-                s.vault
-                    .issues()
-                    .iter()
-                    .map(|i| format!("{:?}: {}", i.kind, i.name))
-                    .collect()
+                s.vault.as_ref().map_or_else(Vec::new, |v| {
+                    v.issues()
+                        .iter()
+                        .map(|i| format!("{:?}: {}", i.kind, i.name))
+                        .collect()
+                })
             },
         )
     }
@@ -385,8 +438,15 @@ impl App {
     /// Advance timers: lock after inactivity, autosave after the debounce. The UI calls this
     /// about once a second.
     pub fn tick(&mut self) -> TickOutcome {
+        if let Some(ev) = self.poll_sync() {
+            return TickOutcome::Sync(ev);
+        }
         if self.idle_remaining() == Some(Duration::ZERO) {
+            if self.lock_pending() {
+                return TickOutcome::Idle;
+            }
             return match self.lock(false) {
+                Ok(()) if self.phase() == Phase::Unlocked => TickOutcome::LockPending,
                 Ok(()) => TickOutcome::Locked,
                 Err(e) => TickOutcome::LockBlocked(e.user_message()),
             };
@@ -395,17 +455,20 @@ impl App {
         let Ok(s) = self.session_mut() else {
             return TickOutcome::Idle;
         };
-        let due = s
-            .open
-            .as_ref()
-            .is_some_and(|o| o.dirty() && now.saturating_sub(o.last_edit) >= debounce);
-        if !due {
-            return TickOutcome::Idle;
+        let due = s.vault.is_some()
+            && s.open
+                .as_ref()
+                .is_some_and(|o| o.dirty() && now.saturating_sub(o.last_edit) >= debounce);
+        if due {
+            return match s.save(now) {
+                Ok(()) => TickOutcome::Saved,
+                Err(e) => TickOutcome::SaveFailed(e.user_message()),
+            };
         }
-        match s.save(now) {
-            Ok(()) => TickOutcome::Saved,
-            Err(e) => TickOutcome::SaveFailed(e.user_message()),
+        if self.maybe_start_sync() {
+            return TickOutcome::Sync(SyncEvent::Started);
         }
+        TickOutcome::Idle
     }
 
     // ---- notes ------------------------------------------------------------------------------
@@ -414,16 +477,14 @@ impl App {
     #[must_use]
     pub fn tree(&self) -> Vec<TreeRow> {
         self.session()
-            .map_or_else(|_| Vec::new(), |s| build_tree(&s.vault.list()))
+            .map_or_else(|_| Vec::new(), |s| build_tree(&s.list()))
     }
 
     /// All notes, sorted by path.
     #[must_use]
     pub fn notes(&self) -> Vec<NoteRef> {
-        self.session().map_or_else(
-            |_| Vec::new(),
-            |s| s.vault.list().iter().map(note_ref).collect(),
-        )
+        self.session()
+            .map_or_else(|_| Vec::new(), |s| s.list().iter().map(note_ref).collect())
     }
 
     /// Create an empty note named "Untitled" (numbered if taken) in `folder` (`""` for the top
@@ -437,7 +498,6 @@ impl App {
         s.flush(now)?;
         let folder = folder.trim_matches('/');
         let taken: Vec<String> = s
-            .vault
             .list()
             .iter()
             .map(|n| n.path.as_str().to_lowercase())
@@ -456,7 +516,8 @@ impl App {
             n += 1;
         };
         let note = Note::new(&name, &path, Vec::new(), "")?;
-        s.vault.create_note(&note)?;
+        s.vault_mut()?.create_note(&note)?;
+        s.sync.changed_at = Some(now);
         s.index.upsert(&note);
         let id = note.id;
         s.open = Some(OpenNote::new(note, now));
@@ -477,7 +538,7 @@ impl App {
             return Ok(());
         }
         s.flush(now)?;
-        let note = s.vault.read_note(&id)?;
+        let note = s.vault()?.read_note(&id)?;
         s.open = Some(OpenNote::new(note, now));
         Ok(())
     }
@@ -505,6 +566,8 @@ impl App {
             tags: o.note.tags.clone(),
             dirty: o.dirty(),
             save_error: o.save_error.clone(),
+            changed_by_sync: o.changed_by_sync,
+            generation: o.generation,
         })
     }
 
@@ -606,12 +669,13 @@ impl App {
                 n.body = (*o.buffer).clone();
                 n
             }
-            _ => s.vault.read_note(&id)?,
+            _ => s.vault()?.read_note(&id)?,
         };
         f(&mut n)?;
         n.modified_at = now_ms();
         n.validate()?;
-        s.vault.update_note(&n)?;
+        s.vault_mut()?.update_note(&n)?;
+        s.sync.changed_at = Some(now);
         s.index.upsert(&n);
         if let Some(o) = s.open.as_mut().filter(|_| is_open) {
             o.note = n;
@@ -628,7 +692,8 @@ impl App {
         let now = self.clock.now();
         let s = self.session_mut()?;
         s.last_activity = now;
-        s.vault.delete_note(&id)?;
+        s.vault_mut()?.delete_note(&id)?;
+        s.sync.changed_at = Some(now);
         s.index.remove(id);
         if s.open.as_ref().is_some_and(|o| o.note.id == id) {
             s.open = None;
@@ -649,7 +714,7 @@ impl App {
             .into_iter()
             .filter_map(|h| {
                 Some(SearchResult {
-                    note: note_ref(s.vault.summary(&h.id)?),
+                    note: note_ref(&s.summary(&h.id)?),
                     snippet: h.snippet.clone(),
                 })
             })
@@ -680,7 +745,7 @@ impl App {
             return Vec::new();
         };
         f(s).iter()
-            .filter_map(|id| s.vault.summary(id).map(note_ref))
+            .filter_map(|id| s.summary(id).map(|n| note_ref(&n)))
             .collect()
     }
 
@@ -695,7 +760,7 @@ impl App {
             .into_iter()
             .filter_map(|u| {
                 Some(UnresolvedRef {
-                    source: note_ref(s.vault.summary(&u.source)?),
+                    source: note_ref(&s.summary(&u.source)?),
                     target: u.target,
                 })
             })
@@ -745,7 +810,7 @@ impl App {
         let s = self.session_mut()?;
         s.flush(now)?;
         s.last_activity = now;
-        Ok(export_markdown(&s.vault, dest)?)
+        Ok(export_markdown(s.vault()?, dest)?)
     }
 
     /// Import a folder of `.md` files, then rebuild the index.
@@ -757,7 +822,8 @@ impl App {
         let s = self.session_mut()?;
         s.flush(now)?;
         s.last_activity = now;
-        let report = import_markdown(&mut s.vault, src);
+        let report = import_markdown(s.vault_mut()?, src);
+        s.sync.changed_at = Some(now);
         // Rebuild even on error: part of the folder may have been imported.
         s.rebuild_index();
         Ok(report?)
@@ -772,23 +838,50 @@ impl OpenNote {
             buffer,
             last_edit: now,
             save_error: None,
+            changed_by_sync: false,
+            generation: 0,
         }
     }
 }
 
 impl Session {
-    fn rebuild_index(&mut self) {
-        let notes: Vec<Note> = self
-            .vault
+    pub(crate) fn vault(&self) -> Result<&Unlocked> {
+        self.vault.as_ref().ok_or(Error::SyncBusy)
+    }
+
+    pub(crate) fn vault_mut(&mut self) -> Result<&mut Unlocked> {
+        self.vault.as_mut().ok_or(Error::SyncBusy)
+    }
+
+    /// The notes, from the vault or (while a sync cycle has it) from the snapshot taken when
+    /// the cycle started.
+    pub(crate) fn list(&self) -> Vec<NoteSummary> {
+        self.vault
+            .as_ref()
+            .map_or_else(|| self.listing.clone(), Unlocked::list)
+    }
+
+    pub(crate) fn summary(&self, id: &NoteId) -> Option<NoteSummary> {
+        match &self.vault {
+            Some(v) => v.summary(id).cloned(),
+            None => self.listing.iter().find(|n| n.id == *id).cloned(),
+        }
+    }
+
+    pub(crate) fn rebuild_index(&mut self) {
+        let Some(vault) = self.vault.as_ref() else {
+            return;
+        };
+        let notes: Vec<Note> = vault
             .list()
             .iter()
-            .filter_map(|s| self.vault.read_note(&s.id).ok())
+            .filter_map(|s| vault.read_note(&s.id).ok())
             .collect();
         self.index.rebuild(notes.iter());
     }
 
     /// Write the buffer if it differs from the stored body. On failure the buffer is kept.
-    fn save(&mut self, now: Duration) -> Result<()> {
+    pub(crate) fn save(&mut self, now: Duration) -> Result<()> {
         let Some(o) = self.open.as_mut() else {
             return Ok(());
         };
@@ -796,18 +889,24 @@ impl Session {
             o.save_error = None;
             return Ok(());
         }
+        let Some(vault) = self.vault.as_mut() else {
+            // A sync cycle has the vault: not a failure, the buffer is saved after it.
+            return Err(Error::SyncBusy);
+        };
         let mut n = o.note.clone();
         n.body = (*o.buffer).clone();
         n.modified_at = now_ms();
         match n
             .validate()
             .map_err(Error::from)
-            .and_then(|()| self.vault.update_note(&n).map_err(Error::from))
+            .and_then(|()| vault.update_note(&n).map_err(Error::from))
         {
             Ok(()) => {
+                self.sync.changed_at = Some(now);
                 self.index.upsert(&n);
                 o.note = n;
                 o.save_error = None;
+                o.changed_by_sync = false;
                 Ok(())
             }
             Err(e) => {
