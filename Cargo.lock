@@ -3018,6 +3018,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "nuvoletta-sync"
+version = "0.0.0"
+dependencies = [
+ "getrandom 0.3.4",
+ "minicbor",
+ "nuvoletta-core",
+ "nuvoletta-crypto",
+ "nuvoletta-storage",
+ "proptest",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.21",
+ "zeroize",
+]
+
+[[package]]
 name = "objc"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"

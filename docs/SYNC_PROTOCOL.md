@@ -1,6 +1,6 @@
-# Nuvoletta Sync Protocol (v1 proposal)
+# Nuvoletta Sync Protocol (v1)
 
-Status: Draft rev 2 — Phase 0, owner decisions applied, cross-review gaps addressed (tombstone ids, local revision cache, segment retry, forks, stray copies); pending owner approval
+Status: Accepted (rev 2). Implemented in `nuvoletta-sync` (Phase 4); the decision is recorded in `ADR/0005-sync-protocol.md`; implementation choices for points the text leaves open are listed in the Implementation notes at the end
 
 Goal: converge devices through a "dumb" shared store (externally synced folder first, WebDAV second) with no atomicity across files, no ordering, delayed or partial propagation, and no conditional writes. Envelope and key details are in `CRYPTO_FORMAT.md`; threats in `THREAT_MODEL.md`.
 
@@ -233,3 +233,26 @@ A's segment `l/…0011.nvlog` (seq 11 to 12) arrives at B before `l/…0009.nvlo
 ## 13. Test plan hooks (Phase 4)
 
 Two or more in-process vault instances over a fault-injecting folder backend (drops, reorders, delays, truncates, duplicates, renames to conflicted-copy names, rolls back); property tests: all devices reach identical heads from any delivery order; no revision lost; idempotent re-sync; crash at every step of the sync cycle.
+
+## Implementation notes (nuvoletta-sync, Phase 4)
+
+Places where the text above leaves a choice, is ambiguous, or the implementation is deliberately narrower. The safest reading was taken in each case; none changes a byte format of `CRYPTO_FORMAT.md`.
+
+1. **Local edits are detected by scanning the vault**, not by hooking storage writes (section 6.2). A note whose stored revision id is not the one sync last saw is an edit; a synced note that disappeared is a delete; the scan runs at the start of every cycle and again before merging. Edits before the entry is sealed collapse into one revision (parents unchanged); only the intent that is the note's current local revision collapses, never re-emitted history. A note created and deleted before any entry was sealed leaves no entry and no object. A DELETE entry must carry at least one parent (otherwise it is reported invalid).
+2. **A vault revision that is a known vertex is never a local edit.** Adopting it (instead of queueing a PUT) is what makes crash recovery and a lost `notes` file safe. An edit made while the sync state was lost has an unknown base, so it is queued as a root (empty parents): a visible two-head conflict, never a silent overwrite.
+3. **Vault writes are two-phase.** The plan (`applying` per note) is persisted first, then the vault is written, then `local_rev` is updated. A planned write is never mistaken for a local edit or delete after a crash.
+4. **Objects are fetched lazily**: heads and their direct parents (the retention set of section 6.1), plus a common ancestor on demand when a 3-way merge needs it, not every applied PUT.
+5. **Checkpoints (10.2).** A standalone CHECKPOINT entry is written only when foreign PUT/DELETE entries were applied since the last one and the seen vector changed; `seen` is attached to the last PUT/DELETE of a segment when the vector changed and either foreign content was applied or the interval (default one hour, configurable) elapsed. Checkpoints never trigger checkpoints, so devices do not ping-pong.
+6. **Automatic merge (7.2).** Two PUT heads merge when, field by field in {title, path, tags, body}, at most one side changed the field from the common ancestor or both changed it to the same value (so metadata-vs-metadata with disjoint fields merges too). A history with several maximal common ancestors (criss-cross) never merges automatically. Timestamps of the merge are `min(created_at)` and `max(modified_at)`, so concurrent merges write equal content. For two heads with **identical content** only the **designated device** (the smallest device id among the heads' introducing devices) writes the merge, otherwise two devices resolving concurrently could keep producing identical heads forever. If that device never syncs again the identical heads stay visible and the user resolves them.
+7. **Forks (10.4).**
+   - The fork point is the first sequence number at which two verified entries differ; when only a `prev` mismatch is visible it is the last sequence number both branches may share. Entries from it on are not applied and applied ones are removed from the graph.
+   - If the diverging entries are our own **unpublished** sealed segment that lost the race for its name (create-only), nobody saw our branch: the other branch is simply the history of the old id (read like any other device, not frozen), and our entries are re-emitted under a new id. Only when both branches are visible on the remote is the id frozen for everyone.
+   - A frozen stream's content that was never installed is never installed; content already installed stays and the note is "needs attention" until the entries reappear (re-emission) or the user resolves it. Nothing is ever removed from the vault or the remote.
+   - If the own chain disagrees with the journal (state files out of step after a crash, or `peers` lost), the device continues under a new id; the old log is then read as a foreign device from sequence 1. Unconfirmed sealed entries become intents again.
+8. **Segments after a gap are not buffered**: they are re-fetched every cycle (`pending` keeps only retry counters and raises a warning after `retries_before_warning` cycles). Same observable behaviour, smaller state.
+9. **The `inventory` skips unchanged files** by name, size and etag (or modification time when the provider has no etags). A same-size, same-time substitution is therefore not re-read (an accepted limit; the chain check on every newly read file still applies).
+10. **`peers` stores the full hash chain** of each device (32 bytes per entry, about 3 MB per 100k entries) so any later file can be compared entry by entry; this is the "re-verify chains" state of section 6.1.
+11. **Rollback warnings** compare the highest visible sequence number per device with the verified one, for own log too (against the confirmed part); a delayed listing can therefore raise a transient warning.
+12. **Header files** are published and observed (`h/`): a newer remote generation, an older maximum than seen before, and invalid or diverging headers are reported. Adopting a newer header needs the new passphrase and is an application action.
+13. **Provider contract.** `list(prefix)` is recursive, returns regular files only (symlinks are omitted) and may include stray names; the engine classifies them. The folder backend creates files with a hard link from a `.tmp-` file (create-only), falling back to check-then-rename where hard links are unavailable; `create_only` is reported as true on Unix only.
+14. **Not implemented**: garbage collection (section 9) and `revs/` pruning (nothing is deleted by the engine, so the caches and the remote grow), snapshots (section 11), the hourly checkpoint cap for standalone checkpoints, enrollment and revocation. Application UI (sync status, conflict screens) is a follow-up: the engine exposes `conflicts()`, `note_status()`, `read_revision()` and the resolution actions.

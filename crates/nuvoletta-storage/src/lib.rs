@@ -8,7 +8,7 @@
 #![forbid(unsafe_code)]
 
 pub mod error;
-mod fsutil;
+pub mod fsutil;
 pub mod layout;
 pub mod locked;
 pub mod portable;

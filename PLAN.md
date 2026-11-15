@@ -344,6 +344,14 @@ Implement:
 - Retry and interrupted-sync recovery.
 - Device ID generation (no enrollment or revocation flow in MVP).
 
+Decisions made in Phase 4 (details in `docs/ADR/0005-sync-protocol.md` and the implementation notes of `docs/SYNC_PROTOCOL.md`):
+- New crate `nuvoletta-sync`: `Provider` trait with a capability model (`create_only`, `atomic_rename`, etags, mtimes), the synced-folder backend, strict name grammar and stray-file classification, hash-chained per-device logs, a per-note version DAG with heads, metadata-only 3-way merge, explicit resolution actions (choose head, keep both, keep/delete), encrypted local sync state, checkpoints, rollback/withholding/fork detection and the idempotent, crash-safe sync cycle.
+- Local edits are found by scanning the vault (no storage hooks); storage only gained small accessors (`keys`, `header`, `read_revision_bytes`, `install_revision`) and public atomic-write helpers. No on-disk format changed.
+- Designated device for merging identical-content heads, fork handling refinements (unpublished divergence versus visible fork) and the other points the protocol text left open are listed in the SYNC_PROTOCOL.md implementation notes.
+- Tests: in-process vault instances over a fault-injecting folder (drops, delays, truncation, duplicates, conflicted copies, rollback, outages), scenarios S1 to S5, crash at every cycle step and every provider operation, hostile-file tests and proptest convergence (the long four-device run is `#[ignore]`, `just test-slow`).
+- Deferred: garbage collection and cache pruning (manual, stubbed), snapshots, hourly cap of standalone checkpoints.
+- Follow-up (out of scope for this phase): app integration (sync settings, sync status, conflict list and resolution UI, "needs attention" and diagnostics screens, scheduling and the folder-picker flow).
+
 Exit criteria:
 - Two independent local vault instances can synchronize through a folder, including offline edits, conflicting edits, and simulated delayed/partial propagation, without data loss.
 

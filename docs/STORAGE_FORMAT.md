@@ -2,7 +2,7 @@
 
 Status: Phase 1 implementation (`nuvoletta-storage`). Byte formats are defined in
 `CRYPTO_FORMAT.md`; this document only describes how the vault directory is laid out and
-operated on. Sync state is out of scope here (`SYNC_PROTOCOL.md`, Phase 4).
+operated on. Sync state (`SYNC_PROTOCOL.md`, Phase 4) is described in section 4.
 
 ## 1. Layout
 
@@ -10,8 +10,9 @@ operated on. Sync state is out of scope here (`SYNC_PROTOCOL.md`, Phase 4).
 <vault>/
   .nuvoletta/
     vault-header            236-byte vault header (CRYPTO_FORMAT section 2)
-    device-state/           reserved (Phase 4), created when first needed
-    sync-state/             reserved (Phase 4): device-id, journal, peers, ... (envelope type 4);
+    device-state/           reserved, created when first needed
+    sync-state/             written by nuvoletta-sync (section 4): device-id (plain hex), journal,
+                            peers, notes, inventory, pending, max-header-gen (envelope type 4);
                             revs/ caches verbatim type 1 revisions (SYNC_PROTOCOL section 6.1)
     cache/                  reserved: rebuildable caches (envelope type 4)
   notes/
@@ -54,6 +55,29 @@ opened for sync on Windows). A crash leaves either the old file or the new one, 
   `<id> (1).nvnote`) is stray and ignored, so a duplicate id can never shadow the real note.
 - Stray, symlinked and corrupt files are reported by `Unlocked::issues()`; they are never read
   as truth and never deleted. A corrupt note does not prevent unlocking.
+
+## 4. Sync state (Phase 4)
+
+The on-disk format of notes and the header is unchanged by Phase 4. `nuvoletta-sync` adds files
+under `.nuvoletta/sync-state/`, all local, none uploaded:
+
+| File | Contents |
+|------|----------|
+| `device-id` | 32 lower-case hex characters and a newline (not secret) |
+| `journal`, `peers`, `notes`, `inventory`, `pending`, `max-header-gen` | one CBOR document `[kind, value]` (the kind is the file name, so files cannot be swapped) sealed as envelope type 4, written atomically |
+| `revs/<revision id>.nvobj` | the exact type 1 envelope bytes of a revision (the remote file), written atomically |
+
+The CBOR layouts are private to `nuvoletta-sync` (`state.rs`) and may change between versions
+without a format bump: everything but `device-id` and the unsent `journal` is rebuilt from the
+remote logs when missing or unreadable, and the engine never trusts these files for security (all
+remote data is re-verified when read). Leftover `.tmp-*` files in these directories are removed
+when the state is loaded.
+
+`nuvoletta-storage` gained a small API for sync, with no change to what it writes:
+`Unlocked::keys()`, `Unlocked::header()`, `Unlocked::read_revision_bytes()` (the stored envelope
+verbatim) and `Unlocked::install_revision()` (authenticate, then atomically replace the note file
+with the given envelope, creating it if needed). The `fsutil` helpers are public, and
+`write_new_atomic` creates a file only if it does not exist (hard link from a temporary file).
 
 ## Implementation notes
 

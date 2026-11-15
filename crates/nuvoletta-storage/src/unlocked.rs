@@ -110,6 +110,60 @@ impl Unlocked {
         v
     }
 
+    /// The subkeys of this session (used by the sync engine to seal and open its own objects).
+    #[must_use]
+    pub fn keys(&self) -> &nuvoletta_crypto::Subkeys {
+        self.vault.keys()
+    }
+
+    /// The vault header this session was unlocked with.
+    #[must_use]
+    pub fn header(&self) -> &VaultHeader {
+        self.vault.header()
+    }
+
+    /// The stored revision envelope of a note, byte for byte (what sync uploads as an object).
+    ///
+    /// # Errors
+    /// [`Error::NotFound`] if the id is not indexed; I/O errors.
+    pub fn read_revision_bytes(&self, id: &NoteId) -> Result<Vec<u8>> {
+        if !self.index.contains_key(id) {
+            return Err(Error::NotFound(*id));
+        }
+        read_regular(&self.note_path(id), MAX_NOTE_FILE)
+    }
+
+    /// Install a note revision envelope verbatim as the stored revision of its note (create or
+    /// replace), after authenticating it and checking that it is a well-formed type 1 object.
+    /// Used by sync to apply a fast-forward or merge atomically.
+    ///
+    /// # Errors
+    /// Crypto errors if the envelope does not authenticate, [`Error::IdMismatch`] if it is not a
+    /// note revision, I/O errors.
+    pub fn install_revision(&mut self, envelope: &[u8]) -> Result<NoteSummary> {
+        let opened = open(self.vault.keys(), envelope)?;
+        if opened.meta.obj_type != ObjType::NoteRevision {
+            return Err(Error::IdMismatch);
+        }
+        let id = NoteId::from_bytes(opened.meta.scope_id);
+        let mut payload = NotePayload::decode(&opened.plaintext)?;
+        payload.check_scope(id.as_bytes())?;
+        let note = Note {
+            id,
+            title: std::mem::take(&mut payload.title),
+            path: NotePath::parse(&payload.path)?,
+            tags: std::mem::take(&mut payload.tags),
+            created_at: payload.created_at,
+            modified_at: payload.modified_at,
+            body: std::mem::take(&mut payload.body),
+        };
+        note.validate()?;
+        write_atomic(&notes_dir(&self.root), &note_file_name(&id), envelope)?;
+        let summary = summary_of(&note, opened.meta.object_id);
+        self.index.insert(id, summary.clone());
+        Ok(summary)
+    }
+
     /// Index entry of one note.
     #[must_use]
     pub fn summary(&self, id: &NoteId) -> Option<&NoteSummary> {
