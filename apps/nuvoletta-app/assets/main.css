@@ -274,3 +274,7 @@ pre.diff { background: var(--nv-raised); border: 1px solid var(--nv-border); bor
 pre.diff .added { background: var(--nv-ok-bg); }
 pre.diff .removed { background: var(--nv-danger-bg); }
 .dialog code { font-family: var(--nv-mono); overflow-wrap: anywhere; }
+
+.trash-list { list-style: none; padding: 0; margin: 8px 0; }
+.trash-item { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--nv-border); }
+.trash-item > div { min-width: 0; overflow-wrap: anywhere; }

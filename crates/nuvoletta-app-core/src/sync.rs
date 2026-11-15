@@ -42,6 +42,9 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+mod trash;
+pub use trash::DeletedItem;
+
 type BoxProvider = Box<dyn Provider + Send>;
 type BoxSyncer = Syncer<BoxProvider>;
 

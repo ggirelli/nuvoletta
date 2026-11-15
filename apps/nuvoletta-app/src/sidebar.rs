@@ -128,6 +128,14 @@ pub fn Sidebar() -> Element {
     rsx! {
         nav { class: "sidebar", "aria-label": "Notes",
             div { {body} }
+            button {
+                class: "link",
+                onclick: move |_| {
+                    let mut t = ui.trash;
+                    t.set(true);
+                },
+                "Recently deleted"
+            }
             if !tags.is_empty() {
                 section { "aria-label": "Tags",
                     h2 { "Tags" }

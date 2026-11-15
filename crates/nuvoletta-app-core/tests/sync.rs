@@ -656,3 +656,90 @@ fn cleanup_previews_without_deleting_and_is_unavailable_while_busy_or_locked() {
     a.app.lock(false).unwrap();
     assert!(matches!(a.app.cleanup_preview(), Err(Error::Locked)));
 }
+
+// ---- recently deleted --------------------------------------------------------------------
+
+#[test]
+fn deleted_notes_are_listed_newest_first_and_restore_converges() {
+    let w = World::new();
+    let mut a = w.first("a");
+    let mut b = w.join("b", &a);
+    let one = a.write("One", "first body");
+    let two = a.write("Two", "second body");
+    a.sync();
+    b.sync();
+    assert!(a.app.recently_deleted().unwrap().is_empty());
+    a.app.delete_note(one).unwrap();
+    a.sync();
+    a.clock.advance(10 * SEC);
+    a.app.delete_note(two).unwrap();
+    // Listed before any cycle ran, newest first, with title and device.
+    let list = a.app.recently_deleted().unwrap();
+    assert_eq!(list.len(), 2);
+    assert!(list[0].deleted_ms >= list[1].deleted_ms);
+    assert!(list.iter().all(|i| i.can_restore && i.device.is_some()));
+    assert!(list.iter().any(|i| i.title.as_deref() == Some("One")));
+    a.sync();
+    b.sync();
+    assert_eq!(b.app.recently_deleted().unwrap().len(), 2);
+    assert!(b.app.notes().iter().all(|n| n.id != one));
+    // Restore on b; both converge.
+    b.app.restore_note(one).unwrap();
+    assert_eq!(b.body(one), "first body");
+    b.sync();
+    a.sync();
+    assert_eq!(a.body(one), "first body");
+    let left = a.app.recently_deleted().unwrap();
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].note, two);
+    assert_eq!(b.app.recently_deleted().unwrap().len(), 1);
+}
+
+#[test]
+fn restore_without_content_is_refused_and_unsynced_vaults_have_nothing() {
+    let w = World::new();
+    let mut a = w.first("a");
+    let id = a.write("Gone", "text");
+    a.app.delete_note(id).unwrap();
+    // Not a deleted note / not deleted at all.
+    assert!(matches!(
+        a.app.restore_note(NoteId::generate().unwrap()),
+        Err(Error::Sync(_))
+    ));
+    // A vault that never configured sync lists nothing.
+    let (mut app, _c) = World::app();
+    app.create_vault(&w.tmp.path().join("solo"), PW).unwrap();
+    let n = app.create_note("").unwrap();
+    app.delete_note(n).unwrap();
+    assert!(app.recently_deleted().unwrap().is_empty());
+    assert!(matches!(app.restore_note(n), Err(Error::SyncNotConfigured)));
+}
+
+#[test]
+fn restore_with_missing_content_says_so_and_changes_nothing() {
+    fn clear_revs(p: &Path) {
+        for e in fs::read_dir(p).unwrap().flatten() {
+            let path = e.path();
+            if path.is_dir() {
+                if path.file_name().is_some_and(|n| n == "revs") {
+                    fs::remove_dir_all(&path).unwrap();
+                    fs::create_dir(&path).unwrap();
+                } else {
+                    clear_revs(&path);
+                }
+            }
+        }
+    }
+    let w = World::new();
+    let mut a = w.first("a");
+    let id = a.write("Lost", "text");
+    a.sync();
+    a.app.delete_note(id).unwrap();
+    a.sync();
+    clear_revs(&a.dir.join(".nuvoletta"));
+    let list = a.app.recently_deleted().unwrap();
+    assert_eq!(list.len(), 1);
+    assert!(!list[0].can_restore && list[0].title.is_none());
+    assert!(matches!(a.app.restore_note(id), Err(Error::Sync(_))));
+    assert_eq!(a.app.recently_deleted().unwrap().len(), 1);
+}
