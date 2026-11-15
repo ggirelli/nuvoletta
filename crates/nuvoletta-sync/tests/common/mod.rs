@@ -149,6 +149,7 @@ pub fn config() -> SyncConfig {
     SyncConfig {
         checkpoint_interval_ms: 0,
         retries_before_warning: 2,
+        ..SyncConfig::default()
     }
 }
 

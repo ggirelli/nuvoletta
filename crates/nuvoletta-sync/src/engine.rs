@@ -28,6 +28,11 @@ pub struct SyncConfig {
     /// Cycles an expected file or claimed entry may be missing before a warning is raised
     /// ("possibly corrupted or withheld").
     pub retries_before_warning: u32,
+    /// How long a half-written file under a name this device needs may stay before the device
+    /// stops waiting for it and re-seals under a fresh name (only on providers whose listing is
+    /// authoritative, such as WebDAV, where it will never complete by itself; a synced folder
+    /// is always waited for). The wait covers a slow upload of another request still in flight.
+    pub partial_upload_grace_ms: i64,
 }
 
 impl Default for SyncConfig {
@@ -35,6 +40,7 @@ impl Default for SyncConfig {
         Self {
             checkpoint_interval_ms: 60 * 60 * 1000,
             retries_before_warning: 3,
+            partial_upload_grace_ms: 10 * 60 * 1000,
         }
     }
 }
@@ -93,6 +99,22 @@ pub enum Warning {
     /// A referenced object has not arrived or fails verification after several cycles.
     ObjectUnavailable {
         /// The revision.
+        rev: RevId,
+    },
+    /// A half-written file of an interrupted upload blocked this device's next log segment, and
+    /// the provider cannot remove it: the device continues its log under a new id. Entries
+    /// already confirmed stay valid under the old id; other devices keep reporting its stream as
+    /// stopped at the damaged file.
+    LogRestarted {
+        /// The id whose next file name is blocked.
+        old: DeviceId,
+        /// The id used from now on.
+        new: DeviceId,
+    },
+    /// A half-written object blocked the name of a note revision; the revision was sealed again
+    /// under a new id.
+    ObjectResealed {
+        /// The blocked revision.
         rev: RevId,
     },
     /// The remote has a newer vault header generation than this device (re-unlock needed).
@@ -288,11 +310,11 @@ impl<P: Provider> Syncer<P> {
         }
         self.state.save(vault.keys())?;
         self.crash_at(CrashPoint::AfterScan)?;
-        self.push_objects(vault)?;
+        self.push_objects(&mut *vault)?;
         self.crash_at(CrashPoint::AfterObjectsPushed)?;
         self.seal_and_upload(vault)?;
         self.crash_at(CrashPoint::AfterUpload)?;
-        let listing = self.provider.list("")?;
+        let listing = self.provider.list_cycle()?;
         self.crash_at(CrashPoint::AfterList)?;
         self.pull_logs(vault, &listing)?;
         self.state.save(vault.keys())?;
@@ -305,7 +327,7 @@ impl<P: Provider> Syncer<P> {
         self.crash_at(CrashPoint::AfterMerge)?;
         // Anything created by this cycle (scan after the pull, automatic merges, fork
         // re-emission) goes out in the same call.
-        self.push_objects(vault)?;
+        self.push_objects(&mut *vault)?;
         self.seal_and_upload(vault)?;
         self.state.rebuilt = false;
         // The local revision cache only ever holds what merging and conflict resolution need;

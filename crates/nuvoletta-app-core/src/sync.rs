@@ -18,15 +18,18 @@ use crate::app::{App, Session, State};
 use crate::diff::diff_lines;
 use crate::error::{Error, Result};
 use crate::sync_messages::{
-    describe_error, describe_invalid, describe_resolution_error, describe_warning, invalid_info,
-    short, stray_info,
+    describe_error, describe_invalid, describe_resolution_error_for, describe_warning,
+    invalid_info, short, stray_info,
 };
-use crate::sync_settings::{SyncSettings, check_sync_folder, device_state_dir, write_device_file};
+use crate::sync_settings::{
+    SyncBackend, SyncSettings, check_sync_folder, device_state_dir, write_device_file,
+};
 use crate::sync_types::{
     AttentionItem, AttentionReason, CleanupSummary, ConflictAction, ConflictItem, ConflictKind,
     HeadDetail, HeadView, InvalidInfo, ResolveOutcome, StrayInfo, SyncEvent, SyncFinished,
     SyncNotice, SyncProblem, SyncState, SyncStatus,
 };
+use crate::webdav::{CheckOutcome, CheckReceiver, load_credentials};
 use nuvoletta_core::{NoteId, now_ms};
 use nuvoletta_storage::{NoteSummary, Unlocked};
 use nuvoletta_sync::ids::Id16;
@@ -85,6 +88,8 @@ impl Provider for Offline {
             atomic_rename: false,
             etags: false,
             mtimes: false,
+            can_delete: false,
+            authoritative: false,
         }
     }
     fn list(&self, _: &str) -> std::result::Result<Vec<RemoteEntry>, ProviderError> {
@@ -134,6 +139,12 @@ pub(crate) struct SyncSession {
     notices: Vec<SyncNotice>,
     problem: Option<SyncProblem>,
     last_synced_ms: Option<i64>,
+    /// The WebDAV credentials of this device, opened from the sealed device state at unlock.
+    pub(crate) webdav: Option<nuvoletta_webdav::WebDavConfig>,
+    /// A WebDAV credential check running on its worker thread.
+    pub(crate) webdav_job: Option<CheckReceiver>,
+    /// A finished check waiting for the vault (needed to seal the credentials).
+    pub(crate) webdav_done: Option<CheckOutcome>,
     /// Time of the last local change not yet handed to a cycle.
     pub(crate) changed_at: Option<Duration>,
     last_started: Option<Duration>,
@@ -142,13 +153,25 @@ pub(crate) struct SyncSession {
 fn open_syncer(
     vault: &Unlocked,
     settings: &SyncSettings,
+    webdav: Option<&nuvoletta_webdav::WebDavConfig>,
 ) -> std::result::Result<Box<BoxSyncer>, nuvoletta_sync::Error> {
-    let provider: BoxProvider = match &settings.folder {
-        Some(f) if settings.active() && f.is_dir() => match FolderProvider::new(f) {
-            Ok(p) => Box::new(p),
-            Err(_) => Box::new(Offline),
+    let provider: BoxProvider = match settings.backend {
+        // The WebDAV provider checks the account (read and create, no delete, no overwrite)
+        // before its first operation of this session and refuses everything otherwise.
+        SyncBackend::WebDav => match webdav {
+            Some(c) if settings.active() => Box::new(nuvoletta_webdav::WebDavProvider::new(
+                c.clone(),
+                nuvoletta_webdav::Options::default(),
+            )),
+            _ => Box::new(Offline),
         },
-        _ => Box::new(Offline),
+        SyncBackend::Folder => match &settings.folder {
+            Some(f) if settings.active() && f.is_dir() => match FolderProvider::new(f) {
+                Ok(p) => Box::new(p),
+                Err(_) => Box::new(Offline),
+            },
+            _ => Box::new(Offline),
+        },
     };
     Syncer::open(vault, provider).map(Box::new)
 }
@@ -314,8 +337,8 @@ impl Session {
             .is_some_and(|m| m.join(STATE_DIR).exists());
         self.sync.syncer = if settings.active() || ever_used {
             Some(
-                open_syncer(vault, settings)
-                    .map_err(|e| Error::Sync(describe_error(&e).message))?,
+                open_syncer(vault, settings, self.sync.webdav.as_ref())
+                    .map_err(|e| Error::Sync(describe_error(&e, settings.backend).message))?,
             )
         } else {
             None
@@ -422,7 +445,9 @@ impl App {
         let folder = check_sync_folder(&root, folder)?;
         let next = SyncSettings {
             enabled: true,
+            backend: SyncBackend::Folder,
             folder: Some(folder),
+            webdav_configured: self.sync_cfg.webdav_configured,
         };
         self.apply_sync_settings(next)
     }
@@ -433,14 +458,18 @@ impl App {
     /// [`Error::SyncNotConfigured`] (no folder), [`Error::SyncBusy`], [`Error::Settings`].
     pub fn set_sync_enabled(&mut self, enabled: bool) -> Result<()> {
         let mut next = self.sync_cfg.clone();
-        if enabled && next.folder.is_none() {
+        let ready = match next.backend {
+            SyncBackend::Folder => next.folder.is_some(),
+            SyncBackend::WebDav => next.webdav_configured,
+        };
+        if enabled && !ready {
             return Err(Error::SyncNotConfigured);
         }
         next.enabled = enabled;
         self.apply_sync_settings(next)
     }
 
-    fn apply_sync_settings(&mut self, next: SyncSettings) -> Result<()> {
+    pub(crate) fn apply_sync_settings(&mut self, next: SyncSettings) -> Result<()> {
         let s = self.session()?;
         if s.vault.is_none() {
             return Err(Error::SyncBusy);
@@ -463,6 +492,19 @@ impl App {
         };
         self.sync_cfg = SyncSettings::load(&s.root);
         s.sync.notices = load_notices(&s.root);
+        if self.sync_cfg.webdav_configured
+            && let Some(v) = s.vault.as_ref()
+        {
+            s.sync.webdav = load_credentials(&s.root, v.keys());
+            if s.sync.webdav.is_none() {
+                s.sync.problem = Some(SyncProblem {
+                    message: "The WebDAV credentials stored on this device could not be read."
+                        .to_owned(),
+                    hint: "Enter the address, user name and password again in the Sync settings."
+                        .to_owned(),
+                });
+            }
+        }
         let cfg = self.sync_cfg.clone();
         if let Err(e) = s.reopen_syncer(&cfg) {
             s.sync.problem = Some(SyncProblem {
@@ -528,7 +570,17 @@ impl App {
             s.sync.problem = Some(p);
             Error::Sync(msg)
         };
-        if !cfg.folder.as_deref().is_some_and(Path::is_dir) {
+        if cfg.backend == SyncBackend::WebDav && s.sync.webdav.is_none() {
+            return Err(fail(
+                s,
+                SyncProblem {
+                    message: "The WebDAV credentials are not available on this device.".to_owned(),
+                    hint: "Enter the address, user name and password again in the Sync settings."
+                        .to_owned(),
+                },
+            ));
+        }
+        if cfg.backend == SyncBackend::Folder && !cfg.folder.as_deref().is_some_and(Path::is_dir) {
             let shown = cfg.folder.as_deref().map(|p| p.display().to_string());
             return Err(fail(
                 s,
@@ -651,6 +703,7 @@ impl App {
             outcome,
             snapshot,
         } = r;
+        let backend = self.sync_cfg.backend;
         let State::Unlocked(s) = &mut self.state else {
             return SyncEvent::Finished(SyncFinished {
                 ok: false,
@@ -679,7 +732,7 @@ impl App {
                 true
             }
             Err(e) => {
-                s.sync.problem = Some(describe_error(&e));
+                s.sync.problem = Some(describe_error(&e, backend));
                 // A failed cycle did not list the folder: keep the last diagnostics.
                 s.sync.snapshot.strays = prior.strays;
                 s.sync.snapshot.invalid = prior.invalid;
@@ -709,6 +762,7 @@ impl App {
         let Ok(s) = self.session() else {
             return SyncStatus {
                 state: SyncState::Disabled,
+                backend: cfg.backend,
                 folder: cfg.folder.clone(),
                 last_synced_ms: None,
                 pending_objects: 0,
@@ -728,6 +782,7 @@ impl App {
         };
         SyncStatus {
             state,
+            backend: cfg.backend,
             folder: cfg.folder.clone(),
             last_synced_ms: s.sync.last_synced_ms,
             pending_objects: s.sync.snapshot.pending,
@@ -797,6 +852,7 @@ impl App {
     /// [`Error::SyncBusy`] during a cycle; [`Error::Sync`] if the version is unknown or has not
     /// arrived.
     pub fn conflict_head(&self, note: NoteId, rev: &str) -> Result<HeadDetail> {
+        let backend = self.sync_cfg.backend;
         let s = self.session()?;
         let (vault, syncer) = match (s.vault.as_ref(), s.sync.syncer.as_deref()) {
             (Some(v), Some(sy)) => (v, sy),
@@ -835,7 +891,7 @@ impl App {
         let rev_id = Id16::from_hex(rev).ok_or_else(|| Error::Sync("bad version id".to_owned()))?;
         let n = syncer
             .read_revision(vault, &note, &rev_id)
-            .map_err(|e| Error::Sync(describe_resolution_error(&e)))?;
+            .map_err(|e| Error::Sync(describe_resolution_error_for(&e, backend)))?;
         let diff = match &local {
             Some(l) if l.body == n.body => Vec::new(),
             Some(l) => diff_lines(&l.body, &n.body),
@@ -865,6 +921,7 @@ impl App {
         note: NoteId,
         action: &ConflictAction,
     ) -> Result<ResolveOutcome> {
+        let backend = self.sync_cfg.backend;
         let now = self.clock_now();
         let s = self.session_mut()?;
         if s.vault.is_none() {
@@ -878,7 +935,8 @@ impl App {
         };
         let hex = |h: &str| Id16::from_hex(h);
         let bad = || Error::Sync("bad version id".to_owned());
-        let map = |e: nuvoletta_sync::Error| Error::Sync(describe_resolution_error(&e));
+        let map =
+            |e: nuvoletta_sync::Error| Error::Sync(describe_resolution_error_for(&e, backend));
         // Make sure edits made since the last cycle are known to the engine before it replaces
         // anything; if that changes the heads, the action below fails and the user reviews again.
         syncer.record_local_changes(vault).map_err(map)?;
@@ -908,10 +966,14 @@ impl App {
     }
 }
 
+/// Why old versions cannot be cleaned up on WebDAV.
+pub const WEBDAV_NO_CLEANUP: &str = "Old versions cannot be cleaned up on WebDAV. The account Nuvoletta uses is deliberately unable to delete files, so that a stolen password cannot destroy your synced notes. The files stay small; if the space is ever a problem, an administrator can remove the folder's old versions with the server's own tools (see the WebDAV setup guide).";
+
 fn summarize(r: &GcReport) -> CleanupSummary {
     let unavailable = r.skipped.map(|s| match s {
         GcSkip::Forks => "A device ID was used twice (see the integrity warnings). Nothing is deleted until that is sorted out.".to_owned(),
         GcSkip::Rebuilding => "This device is still rebuilding its sync knowledge. Sync again, then retry.".to_owned(),
+        GcSkip::NoDelete => WEBDAV_NO_CLEANUP.to_owned(),
     });
     CleanupSummary {
         dry_run: r.dry_run,
@@ -949,6 +1011,22 @@ impl App {
     }
 
     fn cleanup(&mut self, dry_run: bool) -> Result<CleanupSummary> {
+        let backend = self.sync_cfg.backend;
+        if backend == SyncBackend::WebDav {
+            if !self.sync_cfg.active() {
+                return Err(Error::SyncNotConfigured);
+            }
+            return Ok(CleanupSummary {
+                dry_run,
+                unavailable: Some(WEBDAV_NO_CLEANUP.to_owned()),
+                old_versions: 0,
+                old_version_bytes: 0,
+                leftovers: 0,
+                leftover_bytes: 0,
+                kept: 0,
+                cache_entries: 0,
+            });
+        }
         if !self.sync_cfg.active() || !self.sync_cfg.folder.as_deref().is_some_and(Path::is_dir) {
             return Err(Error::SyncNotConfigured);
         }
@@ -963,6 +1041,6 @@ impl App {
         syncer
             .collect_garbage(vault, &opts)
             .map(|r| summarize(&r))
-            .map_err(|e| Error::Sync(describe_error(&e).message))
+            .map_err(|e| Error::Sync(describe_error(&e, backend).message))
     }
 }

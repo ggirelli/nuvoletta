@@ -30,6 +30,9 @@ pub enum Error {
     /// Sync failed.
     #[error("sync: {0}")]
     Sync(String),
+    /// Input that cannot be used (a bad web address, a missing password), in words for the user.
+    #[error("{0}")]
+    Input(String),
     /// Settings could not be read or written.
     #[error("settings: {0}")]
     Settings(String),

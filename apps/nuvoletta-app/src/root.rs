@@ -353,15 +353,7 @@ fn Topbar() -> Element {
             }
             span { class: if bad { "status bad" } else { "status" }, role: "status", "{status}" }
             div { class: "spacer" }
-            if crate::platform::ANDROID {
-                button {
-                    title: "Why sync is not available",
-                    onclick: move |_| ui.info(nuvoletta_app_core::ANDROID_SYNC_UNAVAILABLE),
-                    "Sync: off"
-                }
-            } else {
-                SyncControls {}
-            }
+            SyncControls {}
             button {
                 onclick: move |_| {
                     let mut s = ui.settings;

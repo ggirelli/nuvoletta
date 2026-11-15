@@ -2,7 +2,7 @@
 
 Status: Draft — Phase 0, owner decisions applied, pending cross-review
 
-Scope: MVP (PLAN.md rev 2): one vault per install, one passphrase plus one recovery key, per-note encrypted envelopes, per-device append-only sync logs over an externally synced folder (WebDAV deferred to v1 or v2), desktop and Android. Companion docs: `CRYPTO_FORMAT.md`, `SYNC_PROTOCOL.md`.
+Scope: MVP (PLAN.md rev 2): one vault per install, one passphrase plus one recovery key, per-note encrypted envelopes, per-device append-only sync logs over an externally synced folder or WebDAV (create-only account), desktop and Android. Companion docs: `CRYPTO_FORMAT.md`, `SYNC_PROTOCOL.md`.
 
 ## 1. Assets
 
@@ -12,7 +12,7 @@ Scope: MVP (PLAN.md rev 2): one vault per install, one passphrase plus one recov
 | A2 | Note metadata: title, path, tags, timestamps, link graph | High |
 | A3 | Passphrase, recovery key | Critical |
 | A4 | Passphrase-derived KEK, vault DEK, derived subkeys | Critical |
-| A5 | Provider credentials (WebDAV password, later OAuth tokens) | High |
+| A5 | Provider credentials (WebDAV address, user name and password; later OAuth tokens) | High |
 | A6 | Integrity and availability of the user's notes (no silent loss, no silent rollback) | High |
 | A7 | Application binary and update channel | High |
 | A8 | Leakable metadata: object sizes, counts, timing, device count, edit frequency | Medium |
@@ -71,6 +71,7 @@ Scope: MVP (PLAN.md rev 2): one vault per install, one passphrase plus one recov
 | T11 | Malicious note or imported Markdown (X5) | Raw HTML disabled or strictly sanitised; no scripts, no remote loads, CSP on the webview, link scheme allowlist, size and depth limits in parser, import path sanitisation (no `..`, symlinks, absolute paths) | Parser bugs; fuzzing in Phase 2 and 7. |
 | T12 | Malicious or corrupt envelope or log (X3, X5) | Bounded, strict parsers; length checks before allocation; decode only after AEAD verification; fuzzing; reject unknown versions | Parser bugs before authentication (header only). |
 | T13 | Provider token theft (X6) | Tokens in OS credential store, never in the vault or synced data, narrowest scope; tokens give ciphertext access only | Thief acts as X3 for that account. |
+| T13a | WebDAV password theft (X6): from a device, a backup, the network, or the server's own logs | Sealed with `K_local` in `device-state/webdav` (unreadable without the vault passphrase, never synced, never logged, zeroized where practical); HTTPS only with web PKI roots or a user-confirmed pinned certificate; credentials sent only to the configured origin (off-origin redirects refused); **the account must be unable to delete, overwrite, rename or move** (checked by probing at setup and every session; unknown is refused), so the thief can read ciphertext and create junk files but cannot destroy or alter the remote copy | Passphrase plus device files reveal the password. Junk files (a thief creating protocol-named files) are ignored by authentication but can fill the quota; a thief can also create a name a device needs (denial of service for that log, handled as an interrupted upload). Mitigate: dedicated account or app password, rotate. Linux/Windows keyrings were rejected: any process of the user reads them while locked. |
 | T14 | Malicious update or dependency (X7) | Pinned and reviewed crates (`cargo-vet`/`cargo-deny`), vendored JS editor with hash, reproducible builds, signed updates (Phase 7) | A compromised signing key or build wins everything. |
 | T15 | Swap, hibernation, temp files, logs, crash dumps, OS backups (X8) | No plaintext temp files; secrets never logged; atomic writes via encrypted temp in vault dir; `mlock` best-effort on desktop; disable crash reporters that capture memory; local app data excluded from cloud backup where the OS allows | Swap and hibernation on desktops not controlled; OS clipboard history. |
 | T16 | Decryption oracle / key misuse across contexts | HKDF domain-separated subkeys; AAD binds object type | Implementation mistakes; mitigated by test vectors. |

@@ -10,10 +10,12 @@ use crate::ui::Ui;
 use dioxus::prelude::*;
 use nuvoletta_app_core::{
     App, AttentionReason, CleanupSummary, ConflictAction, ConflictItem, ConflictKind, DiffKind,
-    HeadView, SyncEvent, SyncState, SyncStatus,
+    HeadView, SyncBackend, SyncEvent, SyncState, SyncStatus, WebDavEvent, WebDavInput,
 };
 use nuvoletta_core::{NoteId, now_ms};
 use std::path::PathBuf;
+use std::time::Duration;
+use zeroize::Zeroizing;
 
 /// "3 minutes ago" style text for a past wall-clock time.
 pub(crate) fn ago(then_ms: i64, now: i64) -> String {
@@ -198,6 +200,215 @@ fn CleanupSection(disabled: bool) -> Element {
     }
 }
 
+/// Where the setup guide lives.
+const WEBDAV_GUIDE: &str = "https://github.com/ggirelli/nuvoletta/blob/main/docs/WEBDAV.md";
+
+/// What the WebDAV form is showing about its last attempt.
+#[derive(Clone, PartialEq)]
+enum DavShown {
+    Saved,
+    NeedsPin { fingerprint: String, reason: String },
+    Refused { title: String, explanation: String },
+    Failed { message: String, hint: String },
+}
+
+/// WebDAV settings: address, user name, password; the account check with its refusal explained
+/// in plain words; trusting a self-signed certificate by fingerprint. Everything that decides is
+/// in `nuvoletta-app-core`.
+#[component]
+fn WebDavSection(disabled: bool) -> Element {
+    let core = use_context::<Core>();
+    let ui = use_context::<Ui>();
+    let summary = core.read(App::webdav_summary);
+    let backend = core.read(|a| a.sync_settings().backend);
+    let enabled = core.read(|a| a.sync_settings().enabled);
+    let mut url = use_signal(String::new);
+    let mut user = use_signal(String::new);
+    let mut pass = use_signal(String::new);
+    let mut pin = use_signal(|| None::<String>);
+    let mut running = use_signal(|| false);
+    let mut shown = use_signal(|| None::<DavShown>);
+    let mut trusted = use_signal(|| false);
+
+    // Collect the result of the check, which runs on a worker thread.
+    let c_poll = core.clone();
+    use_future(move || {
+        let c = c_poll.clone();
+        async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                if !*running.peek() {
+                    continue;
+                }
+                if let Some(ev) = c.quiet(App::poll_webdav) {
+                    running.set(false);
+                    match ev {
+                        WebDavEvent::Saved => {
+                            url.set(String::new());
+                            user.set(String::new());
+                            pass.set(String::new());
+                            pin.set(None);
+                            shown.set(Some(DavShown::Saved));
+                        }
+                        WebDavEvent::NeedsPin {
+                            fingerprint,
+                            reason,
+                        } => {
+                            trusted.set(false);
+                            shown.set(Some(DavShown::NeedsPin {
+                                fingerprint,
+                                reason,
+                            }));
+                        }
+                        WebDavEvent::Refused { title, explanation } => {
+                            pin.set(None);
+                            shown.set(Some(DavShown::Refused { title, explanation }));
+                        }
+                        WebDavEvent::Failed { message, hint } => {
+                            shown.set(Some(DavShown::Failed { message, hint }));
+                        }
+                    }
+                    c.bump();
+                }
+            }
+        }
+    });
+
+    let c_start = core.clone();
+    let start = move || {
+        let input = WebDavInput {
+            url: url.read().clone(),
+            username: user.read().clone(),
+            password: Zeroizing::new(pass.read().clone()),
+            pin: pin.read().clone(),
+        };
+        match c_start.act(|a| a.webdav_check_start(&input)) {
+            Ok(()) => {
+                shown.set(None);
+                running.set(true);
+            }
+            Err(e) => shown.set(Some(DavShown::Failed {
+                message: e.user_message(),
+                hint: String::new(),
+            })),
+        }
+    };
+    let mut start_form = start.clone();
+    let start_pin = start;
+    let (c_forget, c_toggle) = (core.clone(), core.clone());
+    let using = backend == SyncBackend::WebDav && enabled;
+    let current = shown();
+
+    rsx! {
+        section { "aria-labelledby": "sync-dav",
+            h2 { id: "sync-dav", "WebDAV" }
+            p { class: "hint", "Sync through a WebDAV server such as Nextcloud, ownCloud or a NAS. Only encrypted files are sent. Use a dedicated account or share that can read and create files but not change or delete them: if it can, Nuvoletta refuses to use it, because anyone who got hold of the password could then wipe out your synced notes. " button { class: "link", r#type: "button", onclick: move |_| { crate::platform::open_external(WEBDAV_GUIDE); }, "Read the setup guide" } }
+            if let Some(sum) = summary.clone() {
+                p {
+                    "Saved on this device: " code { "{sum.url}" } " as " strong { "{sum.username}" }
+                    if using { " (in use)" } else { " (sync is off or uses another backend)" }
+                }
+                if let Some(fp) = sum.pinned_fingerprint.clone() {
+                    p { class: "hint", "Trusted certificate fingerprint (SHA-256): " code { "{fp}" } }
+                }
+                p { class: "hint", "The address, user name and password are stored encrypted on this device only, are never synced and are readable only while the vault is unlocked." }
+                div { class: "actions",
+                    button {
+                        r#type: "button",
+                        disabled,
+                        onclick: move |_| {
+                            let on = !using;
+                            let r = c_toggle.act(|a| {
+                                if on && a.sync_settings().backend != SyncBackend::WebDav {
+                                    // Switching back to WebDAV means checking the account again.
+                                    return Err(nuvoletta_app_core::Error::Input("Enter the password below to use WebDAV again: the account is checked each time it is set up.".into()));
+                                }
+                                a.set_sync_enabled(on)
+                            });
+                            if let Err(e) = r {
+                                ui.error(e.user_message());
+                            }
+                        },
+                        if using { "Turn sync off" } else { "Turn sync on" }
+                    }
+                    button {
+                        r#type: "button",
+                        class: "danger",
+                        disabled,
+                        onclick: move |_| {
+                            if let Err(e) = c_forget.act(App::webdav_forget) {
+                                ui.error(e.user_message());
+                            }
+                        },
+                        "Forget these credentials"
+                    }
+                }
+            }
+            form {
+                onsubmit: move |e| {
+                    e.prevent_default();
+                    pin.set(None);
+                    start_form();
+                },
+                label { r#for: "dav-url", "Folder address" }
+                input { id: "dav-url", r#type: "url", placeholder: "https://cloud.example.org/remote.php/dav/files/me/Nuvoletta/", autocomplete: "off", value: "{url}", oninput: move |e| url.set(e.value()) }
+                label { r#for: "dav-user", "User name" }
+                input { id: "dav-user", autocomplete: "username", value: "{user}", oninput: move |e| user.set(e.value()) }
+                label { r#for: "dav-pass", "Password (an app password if your server offers them)" }
+                input { id: "dav-pass", r#type: "password", autocomplete: "current-password", value: "{pass}", oninput: move |e| pass.set(e.value()) }
+                if running() {
+                    p { class: "hint", role: "status", "Checking what this account may do… (this creates a few small test files named .nuvoletta-probe in the folder)" }
+                }
+                match current {
+                    Some(DavShown::Saved) => rsx! { p { class: "hint", role: "status", "The account can read and create files but not change or delete them. Saved; sync is on." } },
+                    Some(DavShown::Refused { title, explanation }) => rsx! {
+                        div { class: "error", role: "alert",
+                            strong { "{title}" }
+                            p { "{explanation}" }
+                        }
+                    },
+                    Some(DavShown::Failed { message, hint }) => rsx! {
+                        div { class: "error", role: "alert",
+                            p { "{message}" }
+                            if !hint.is_empty() { p { "{hint}" } }
+                        }
+                    },
+                    Some(DavShown::NeedsPin { fingerprint, reason }) => rsx! {
+                        div { class: "warning", role: "alert",
+                            strong { "This server's certificate is not signed by a known authority" }
+                            p { "Reason: {reason}. This is normal for a NAS with a self-signed certificate. Nuvoletta has not sent your password anywhere. If you trust this server, compare this fingerprint (SHA-256) with the one your server or router shows for its certificate:" }
+                            p { code { "{fingerprint}" } }
+                            label { class: "check",
+                                input { r#type: "checkbox", checked: trusted(), onchange: move |e| trusted.set(e.checked()) }
+                                span { "The fingerprints are identical. Trust exactly this certificate for this address." }
+                            }
+                            div { class: "actions",
+                                button {
+                                    r#type: "button",
+                                    disabled: !trusted(),
+                                    onclick: {
+                                        let fp = fingerprint.clone();
+                                        let mut start = start_pin.clone();
+                                        move |_| {
+                                            pin.set(Some(fp.clone()));
+                                            start();
+                                        }
+                                    },
+                                    "Trust this certificate and continue"
+                                }
+                            }
+                        }
+                    },
+                    None => rsx! {},
+                }
+                div { class: "actions",
+                    button { class: "primary", r#type: "submit", disabled: disabled || running(), "Check account and save" }
+                }
+            }
+        }
+    }
+}
+
 fn close_dialog(ui: Ui) {
     let mut s = ui.sync;
     s.set(false);
@@ -360,6 +571,12 @@ fn SyncMain() -> Element {
                     }
                 }
 
+                if crate::platform::ANDROID {
+                    section { "aria-labelledby": "sync-folder",
+                        h2 { id: "sync-folder", "Sync folder" }
+                        p { class: "hint", "{nuvoletta_app_core::ANDROID_FOLDER_SYNC_UNAVAILABLE}" }
+                    }
+                } else {
                 section { "aria-labelledby": "sync-folder",
                     h2 { id: "sync-folder", "Sync folder" }
                     p { class: "hint", "Choose the folder that your sync tool (Syncthing, Dropbox, iCloud, Nextcloud, …) keeps in step between your devices. Only encrypted files are written there. The choice is stored on this device only." }
@@ -411,6 +628,9 @@ fn SyncMain() -> Element {
                         }
                     }
                 }
+                }
+
+                WebDavSection { disabled: syncing }
 
                 CleanupSection { disabled: busy }
 

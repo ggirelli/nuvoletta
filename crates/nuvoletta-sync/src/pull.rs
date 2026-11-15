@@ -73,7 +73,7 @@ impl<P: Provider> Syncer<P> {
                 }),
                 Class::Temp => {
                     // Our own interrupted uploads only: never touch another writer's files.
-                    if e.name.starts_with(&own_dir) {
+                    if e.name.starts_with(&own_dir) && self.provider.capabilities().can_delete {
                         match self.provider.delete(&e.name) {
                             Ok(()) | Err(ProviderError::NotFound(_)) => {}
                             Err(err) => return Err(err.into()),

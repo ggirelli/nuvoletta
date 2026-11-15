@@ -18,6 +18,15 @@ pub struct Capabilities {
     pub etags: bool,
     /// `list` returns modification times.
     pub mtimes: bool,
+    /// `delete` may be used. False for providers that are operated with credentials that must
+    /// not be able to delete (WebDAV, `docs/WEBDAV.md`): garbage collection is unavailable there
+    /// and nothing may rely on removing a file (no temporary names, no leftover cleanup).
+    pub can_delete: bool,
+    /// A file that is listed was written completely by a request that has ended, and there is
+    /// no propagation delay: what the store shows is the truth (a server, not a synced folder).
+    /// A half-written file under a name this device owns is then permanent rather than "not yet
+    /// arrived", which lets the engine move on instead of waiting forever.
+    pub authoritative: bool,
 }
 
 /// One file in a listing.
@@ -45,7 +54,17 @@ pub enum ProviderError {
     /// A failure that may succeed if retried (network, timeout, busy).
     #[error("transient provider failure: {0}")]
     Transient(String),
-    /// Any other failure (invalid name, permission, unsafe entry, corrupt store).
+    /// The store rejected the credentials.
+    #[error("authentication failed: {0}")]
+    Auth(String),
+    /// The credentials are valid but may not do this (read, create, list).
+    #[error("not permitted: {0}")]
+    Forbidden(String),
+    /// The credentials can do more than the policy allows (they can delete or overwrite), so the
+    /// store is not used at all.
+    #[error("unsafe credentials: {0}")]
+    UnsafeCredentials(String),
+    /// Any other failure (invalid name, unsafe entry, corrupt store).
     #[error("provider failure: {0}")]
     Other(String),
 }
@@ -70,6 +89,17 @@ pub trait Provider {
     /// # Errors
     /// Provider failures; a missing directory is an empty listing, not an error.
     fn list(&self, prefix: &str) -> Result<Vec<RemoteEntry>, ProviderError>;
+
+    /// The listing a sync cycle needs: like `list("")`, but a provider whose listings cost one
+    /// request per directory may leave out directories only used for diagnostics and garbage
+    /// collection (the sharded `o/` tree), because a cycle fetches objects by name. The default
+    /// is the full listing.
+    ///
+    /// # Errors
+    /// Provider failures.
+    fn list_cycle(&self) -> Result<Vec<RemoteEntry>, ProviderError> {
+        self.list("")
+    }
 
     /// Read a whole file.
     ///
@@ -97,6 +127,9 @@ impl<P: Provider + ?Sized> Provider for &P {
     fn list(&self, prefix: &str) -> Result<Vec<RemoteEntry>, ProviderError> {
         (**self).list(prefix)
     }
+    fn list_cycle(&self) -> Result<Vec<RemoteEntry>, ProviderError> {
+        (**self).list_cycle()
+    }
     fn get(&self, name: &str) -> Result<Vec<u8>, ProviderError> {
         (**self).get(name)
     }
@@ -114,6 +147,30 @@ impl<P: Provider + ?Sized> Provider for Box<P> {
     }
     fn list(&self, prefix: &str) -> Result<Vec<RemoteEntry>, ProviderError> {
         (**self).list(prefix)
+    }
+    fn list_cycle(&self) -> Result<Vec<RemoteEntry>, ProviderError> {
+        (**self).list_cycle()
+    }
+    fn get(&self, name: &str) -> Result<Vec<u8>, ProviderError> {
+        (**self).get(name)
+    }
+    fn put_new(&self, name: &str, bytes: &[u8]) -> Result<(), ProviderError> {
+        (**self).put_new(name, bytes)
+    }
+    fn delete(&self, name: &str) -> Result<(), ProviderError> {
+        (**self).delete(name)
+    }
+}
+
+impl<P: Provider + ?Sized> Provider for std::sync::Arc<P> {
+    fn capabilities(&self) -> Capabilities {
+        (**self).capabilities()
+    }
+    fn list(&self, prefix: &str) -> Result<Vec<RemoteEntry>, ProviderError> {
+        (**self).list(prefix)
+    }
+    fn list_cycle(&self) -> Result<Vec<RemoteEntry>, ProviderError> {
+        (**self).list_cycle()
     }
     fn get(&self, name: &str) -> Result<Vec<u8>, ProviderError> {
         (**self).get(name)

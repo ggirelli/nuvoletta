@@ -7,11 +7,12 @@ use std::path::PathBuf;
 /// `apps/nuvoletta-app/Dioxus.toml`.
 pub const ANDROID_APP_ID: &str = "dev.nuvoletta.app";
 
-/// Shown in place of the sync controls on Android (`docs/ADR/0006-android-app.md`).
-pub const ANDROID_SYNC_UNAVAILABLE: &str = "Sync is not available on Android yet. The synced-folder backend needs a folder an \
-     external sync app can reach, which Android only offers through the Storage Access \
-     Framework; that is not implemented. Your notes stay encrypted in the app's private \
-     storage on this device.";
+/// Shown instead of the synced-folder option on Android (`docs/ADR/0006-android-app.md`). Sync
+/// on Android uses WebDAV (`docs/WEBDAV.md`).
+pub const ANDROID_FOLDER_SYNC_UNAVAILABLE: &str = "On Android, sync uses WebDAV (Nextcloud, ownCloud or a NAS). The synced-folder option needs a \
+     folder an external sync app can reach, which Android only offers through the Storage Access \
+     Framework; that is not implemented. Your notes stay encrypted in the app's private storage \
+     on this device.";
 
 /// Android multi-user: user `n` owns uids `n * 100_000 ..`.
 const ANDROID_UID_PER_USER: u32 = 100_000;

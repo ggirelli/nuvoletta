@@ -92,6 +92,12 @@ pub struct Journal {
     #[n(6)]
     #[cbor(skip_if = "Option::is_none")]
     pub device: Option<DeviceId>,
+    /// Uploads that found a half-written file under the name they need, on a provider where
+    /// that is permanent (`Capabilities::authoritative`): when it was first seen. Keyed by the
+    /// revision id (object) or by the own device id (log segment).
+    #[n(7)]
+    #[cbor(skip_if = "Option::is_none")]
+    pub blocked: Option<BTreeMap<Id16, i64>>,
 }
 
 /// Evidence of a fork of a device id (section 10.4).

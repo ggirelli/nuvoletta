@@ -1,6 +1,7 @@
 //! Plain data types of the sync view: status, notices, conflicts, diagnostics.
 
 use crate::diff::DiffLine;
+use crate::sync_settings::SyncBackend;
 use nuvoletta_core::NoteId;
 use std::path::PathBuf;
 
@@ -29,6 +30,8 @@ pub struct SyncProblem {
 pub struct SyncStatus {
     /// What sync is doing.
     pub state: SyncState,
+    /// The backend in use.
+    pub backend: SyncBackend,
     /// The sync folder, if one is chosen.
     pub folder: Option<PathBuf>,
     /// Wall-clock time (ms since the epoch) of the last successful cycle in this session.

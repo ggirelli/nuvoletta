@@ -20,6 +20,7 @@ scope, architecture and phases. Update it when a decision changes.
 
 - `crates/nuvoletta-core`: domain types (note ids, virtual paths, note model); no I/O.
 - `crates/nuvoletta-crypto`: vault header, keys and encrypted object format (`docs/CRYPTO_FORMAT.md`).
+- `crates/nuvoletta-webdav`: WebDAV backend (HTTPS client, credential check that refuses accounts able to delete or overwrite, `WebDavProvider`; `docs/WEBDAV.md`).
 - `crates/nuvoletta-storage`: filesystem vault, atomic writes, note CRUD (`docs/STORAGE_FORMAT.md`).
 - `crates/nuvoletta-sync`: provider trait, synced-folder backend, per-device logs, version DAG and the
   sync cycle (`docs/SYNC_PROTOCOL.md`).

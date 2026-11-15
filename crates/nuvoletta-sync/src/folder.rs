@@ -165,6 +165,8 @@ impl Provider for FolderProvider {
             atomic_rename: true,
             etags: false,
             mtimes: true,
+            can_delete: true,
+            authoritative: false,
         }
     }
 
