@@ -89,16 +89,21 @@ devices. Only encrypted files are written there. The protocol is in
    from what the last sync learned, and is unavailable while a sync cycle runs, while the vault is
    locked, without a sync folder, and while a device ID is reported as used twice. A clean-up that is
    interrupted is safe to repeat.
-8. **Recently deleted.** The sidebar's *Recently deleted* button lists notes whose latest state is a
-   deletion, newest first, with title, path, when and by which device (short id). *Restore* writes
-   a new version of the note's last content whose parent is the deletion (the same mechanism as
-   *Keep the note* for delete-versus-edit), so every device gets the note back after its next sync.
-   If the content is not on this device yet the entry says so and Restore is disabled until a sync
-   brings it. There is no "empty trash": how long deleted content survives is decided by the
-   cleanup rules above (a deleted note keeps its last version). **Limit:** only vaults that had
-   sync set up list deleted notes; without sync a delete just removes the note file and nothing is
-   kept (no on-disk format change was made to change that). The logic is `App::recently_deleted`
-   and `App::restore_note` in app-core, on `Syncer::deleted_notes` and `Syncer::restore_note`.
+8. **Recently deleted.** The sidebar's *Recently deleted* button lists deleted notes, newest first,
+   with title, path and when (and, for synced notes, by which device, short id). Two sources are
+   merged and deduplicated by note id. A note that sync has seen is deleted through a tombstone;
+   *Restore* writes a new version of its last content whose parent is the deletion (the same
+   mechanism as *Keep the note* for delete-versus-edit), so every device gets the note back after
+   its next sync. If the content is not on this device yet the entry says so and Restore is
+   disabled until a sync brings it. A note that sync has not seen (a vault without sync, or a note
+   deleted before any sync scan) sits in the vault's local trash (`STORAGE_FORMAT.md` section 3.1):
+   *Restore* moves the file back; if a live note already has that id the old version returns as a
+   separate copy titled "... (restored)", never overwriting. A sync-tracked note is never restored
+   by moving a file back. Local trash entries are removed automatically 30 days after deletion
+   (checked at unlock and when the view opens); there is no "empty trash" and no per-item
+   delete, and synced content follows the cleanup rules above. The dialog text says so. The logic
+   is `App::recently_deleted` and `App::restore_note` in app-core, on `Unlocked::list_trash` /
+   `restore_from_trash` and `Syncer::deleted_notes` / `restore_note`.
 
 ## Android
 

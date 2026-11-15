@@ -12,8 +12,10 @@ pub mod fsutil;
 pub mod layout;
 pub mod locked;
 pub mod portable;
+pub mod trash;
 pub mod unlocked;
 
 pub use error::{Error, Result};
 pub use locked::Locked;
+pub use trash::TrashedNote;
 pub use unlocked::{Issue, IssueKind, NoteSummary, Unlocked};
