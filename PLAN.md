@@ -60,7 +60,7 @@ The MVP consists of four capabilities:
 - Provide clear sync status and actionable error messages.
 - Keep provider credentials in the platform credential store where available, not in the vault or plaintext config.
 
-**Provider targets:** the first real backend is an **externally synced folder**: a local folder that the user syncs with Syncthing, Dropbox, iCloud, a Nextcloud client, or similar. Nuvoletta only reads and writes files there. WebDAV is second. Google Drive and Dropbox (API) backends are post-MVP. Keep the provider interface generic so other backends can be added later. A plain local-folder backend remains useful for tests.
+**Provider targets:** the first real backend is an **externally synced folder**: a local folder that the user syncs with Syncthing, Dropbox, iCloud, a Nextcloud client, or similar. Nuvoletta only reads and writes files there. It is the **only** backend in the MVP: WebDAV is deferred to v1 or v2 (owner decision, 2026-11-15; see Phase 5), and Google Drive and Dropbox (API) backends are post-MVP too. Keep the provider interface generic so other backends can be added later. A plain local-folder backend remains useful for tests.
 
 The sync protocol must tolerate a dumb file-sync layer: no atomicity across files, delayed or partial propagation, files appearing out of order, and sync-tool conflict copies (which must be recognized and handled, not treated as corruption). More generally, do not assume that providers offer identical atomicity, revision history, conditional writes, or reliable change feeds. The sync engine must work correctly even when it has to list and compare remote objects.
 
@@ -81,6 +81,7 @@ The sync protocol must tolerate a dumb file-sync layer: no atomicity across file
 - Complex graph visualization.
 - Attachments and rich media (post-MVP).
 - Device revocation and DEK rotation.
+- WebDAV backend (deferred to v1 or v2; see Phase 5).
 - Google Drive and Dropbox API backends.
 - End-to-end encrypted sharing between different users.
 - Importers for every note-taking application.
@@ -247,8 +248,7 @@ nuvoletta/
 │   ├── nuvoletta-app-core/   # UI-independent app logic: session, autosave, auto-lock, queries
 │   ├── nuvoletta-sync/       # Sync state machine and conflict handling
 │   ├── nuvoletta-provider/   # Provider traits and shared sync types
-│   └── nuvoletta-webdav/     # WebDAV backend
-│   # Later (post-MVP): nuvoletta-google-drive, nuvoletta-dropbox
+│   # Later (v1/v2): nuvoletta-webdav; post-MVP: nuvoletta-google-drive, nuvoletta-dropbox
 │   # The synced-folder and test local-folder backends live in nuvoletta-provider.
 ├── apps/
 │   └── nuvoletta-app/        # Dioxus application
@@ -363,9 +363,11 @@ Decisions made in the Phase 4 app integration (details in `docs/APP.md`):
 Exit criteria:
 - Two independent local vault instances can synchronize through a folder, including offline edits, conflicting edits, and simulated delayed/partial propagation, without data loss.
 
-### Phase 5 — WebDAV (cloud APIs post-MVP)
+### Phase 5 — WebDAV (deferred to v1 or v2)
 
-Implement WebDAV, including common NAS deployments. Google Drive and Dropbox backends are post-MVP.
+**Deferred** (owner decision, 2026-11-15): the MVP ships with the synced-folder backend only; WebDAV is planned for v1 or v2. The sync engine needs no change for it (the provider interface is list, get, create-only put, delete; SYNC_PROTOCOL section 2 already describes the WebDAV upload rule). Open decisions for when it resumes: where WebDAV credentials are stored on each device (OS keyring, vault-encrypted device state, or prompt per session) and the HTTP stack. Phase 6 and 7 proceed without it.
+
+When resumed: implement WebDAV, including common NAS deployments. Google Drive and Dropbox backends are post-MVP.
 
 For each provider (and the synced-folder setup guides for common sync tools):
 - Document required permissions and setup.
@@ -382,6 +384,8 @@ Exit criteria:
 Start with Android:
 - Verify Dioxus mobile support and required platform APIs early.
 - Use app-private storage by default.
+- Sync in the MVP uses the synced-folder backend only (WebDAV is deferred), so Android needs a user-chosen folder that an external sync app (e.g. Syncthing) keeps in sync, reached through the Storage Access Framework. Verify early that this works with the folder provider's guarantees (create-only writes, rename, listing); if it cannot, raise it before committing to Android sync.
+- iOS has no equivalent shared-folder model beyond Files providers; this weighs on the iOS assessment while WebDAV is deferred.
 - Integrate Android secure credential facilities where appropriate.
 - Handle background/foreground transitions and interrupted sync.
 - Make editing, locking, and conflict resolution practical on a small screen.
@@ -451,7 +455,7 @@ Current direction:
 - Metadata (title, path, tags) lives inside each note's encrypted envelope; no global index object.
 - Keys: single passphrase plus one recovery key per vault (second DEK wrap); enrollment by passphrase; no revocation in MVP.
 - Vaults: one vault per install for the MVP; multi-vault support may come later, so avoid hard-coding a singleton vault in core APIs.
-- Sync: provider-independent engine with per-device append-only logs; first backend is an externally synced folder, then WebDAV; Google Drive and Dropbox post-MVP.
+- Sync: provider-independent engine with per-device append-only logs; the only MVP backend is an externally synced folder; WebDAV deferred to v1 or v2 (2026-11-15); Google Drive and Dropbox post-MVP.
 - Attachments: post-MVP. Local note version history: MVP if cheap, else early post-MVP.
 - Platforms: desktop and Android first; iOS feasibility to be validated.
 - Plugins: architecture should allow extensions later; plugin runtime is not MVP scope.
