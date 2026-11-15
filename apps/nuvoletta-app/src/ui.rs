@@ -40,6 +40,8 @@ pub struct Ui {
     pub sync: Signal<bool>,
     /// Conflicting note being reviewed inside the sync dialog.
     pub conflict: Signal<Option<nuvoletta_core::NoteId>>,
+    /// Recently deleted dialog visible.
+    pub trash: Signal<bool>,
     /// Wall-clock time (ms), refreshed periodically so relative times stay current.
     pub clock_ms: Signal<i64>,
 }
@@ -68,6 +70,7 @@ impl Ui {
         self.tag.set(None);
         self.settings.set(false);
         self.sync.set(false);
+        self.trash.set(false);
         self.conflict.set(None);
         self.confirm_delete.set(None);
         self.recovery_key.set(None);

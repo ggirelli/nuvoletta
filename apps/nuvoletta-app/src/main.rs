@@ -13,6 +13,7 @@ mod platform;
 mod root;
 mod sidebar;
 mod sync;
+mod trash;
 mod ui;
 
 /// Brand app icon (`assets/brand/02-app-icon.svg` rendered at 256 px).

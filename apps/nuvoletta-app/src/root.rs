@@ -10,6 +10,7 @@ use crate::platform::shell::tao::event::{Event, WindowEvent};
 use crate::platform::shell::use_wry_event_handler;
 use crate::sidebar::Sidebar;
 use crate::sync::{SyncControls, SyncDialog};
+use crate::trash::TrashDialog;
 use crate::ui::Ui;
 use dioxus::prelude::*;
 use nuvoletta_app_core::{BackgroundOutcome, LinkAction, Phase, TickOutcome, classify_link};
@@ -41,6 +42,7 @@ pub fn Root() -> Element {
         list_open: Signal::new(true),
         sync: Signal::new(false),
         conflict: Signal::new(None),
+        trash: Signal::new(false),
         clock_ms: Signal::new(crate::sync::wall_ms()),
     });
 
@@ -180,6 +182,7 @@ pub fn Root() -> Element {
                         }
                         if settings_open { Settings {} }
                         if sync_open { SyncDialog {} }
+                        if *ui.trash.read() { TrashDialog {} }
                     }
                 },
             }

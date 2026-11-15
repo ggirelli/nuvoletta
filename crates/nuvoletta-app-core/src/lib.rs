@@ -41,7 +41,7 @@ pub use platform::{
     ANDROID_APP_ID, ANDROID_SYNC_UNAVAILABLE, AndroidPaths, android_files_dir, package_from_cmdline,
 };
 pub use settings::{DEFAULT_AUTO_LOCK_MINUTES, MAX_AUTO_LOCK_MINUTES, Settings, parse_tags};
-pub use sync::SyncTiming;
+pub use sync::{DeletedItem, SyncTiming};
 pub use sync_settings::{SyncSettings, check_sync_folder};
 pub use sync_types::{
     AttentionItem, AttentionReason, CleanupSummary, ConflictAction, ConflictItem, ConflictKind,

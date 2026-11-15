@@ -89,6 +89,16 @@ devices. Only encrypted files are written there. The protocol is in
    from what the last sync learned, and is unavailable while a sync cycle runs, while the vault is
    locked, without a sync folder, and while a device ID is reported as used twice. A clean-up that is
    interrupted is safe to repeat.
+8. **Recently deleted.** The sidebar's *Recently deleted* button lists notes whose latest state is a
+   deletion, newest first, with title, path, when and by which device (short id). *Restore* writes
+   a new version of the note's last content whose parent is the deletion (the same mechanism as
+   *Keep the note* for delete-versus-edit), so every device gets the note back after its next sync.
+   If the content is not on this device yet the entry says so and Restore is disabled until a sync
+   brings it. There is no "empty trash": how long deleted content survives is decided by the
+   cleanup rules above (a deleted note keeps its last version). **Limit:** only vaults that had
+   sync set up list deleted notes; without sync a delete just removes the note file and nothing is
+   kept (no on-disk format change was made to change that). The logic is `App::recently_deleted`
+   and `App::restore_note` in app-core, on `Syncer::deleted_notes` and `Syncer::restore_note`.
 
 ## Android
 

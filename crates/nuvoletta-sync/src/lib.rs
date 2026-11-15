@@ -27,6 +27,7 @@ mod push;
 mod reconcile;
 mod resolve;
 pub mod state;
+mod trash;
 
 pub use engine::{InvalidEntry, StrayFile, StrayKind, SyncConfig, SyncReport, Syncer, Warning};
 pub use error::{Error, Result};
@@ -35,6 +36,7 @@ pub use gc::{DEFAULT_KEEP_REVISIONS, GcKept, GcOptions, GcReport, GcSkip};
 pub use ids::{DeviceId, Hash32, Id16, RevId};
 pub use provider::{Capabilities, Provider, ProviderError, RemoteEntry};
 pub use resolve::{Conflict, HeadInfo, NoteStatus};
+pub use trash::DeletedNote;
 
 /// Points of the sync cycle at which tests can simulate a crash (see [`Syncer::arm_crash`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]

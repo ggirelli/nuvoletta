@@ -16,7 +16,7 @@ use nuvoletta_core::{NoteId, now_ms};
 use std::path::PathBuf;
 
 /// "3 minutes ago" style text for a past wall-clock time.
-fn ago(then_ms: i64, now: i64) -> String {
+pub(crate) fn ago(then_ms: i64, now: i64) -> String {
     let s = (now - then_ms).max(0) / 1000;
     match s {
         0..=9 => "just now".to_owned(),
