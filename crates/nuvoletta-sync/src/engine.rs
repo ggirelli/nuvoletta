@@ -173,6 +173,8 @@ pub struct SyncReport {
     pub conflicts: usize,
     /// Heads whose content is not yet available (dangling).
     pub dangling: usize,
+    /// Cached old revisions removed from the local `revs/` cache (section 6.1).
+    pub revs_pruned: usize,
     /// Notes awaiting attention after a fork freeze.
     pub needs_attention: usize,
     /// Warnings.
@@ -306,6 +308,9 @@ impl<P: Provider> Syncer<P> {
         self.push_objects(vault)?;
         self.seal_and_upload(vault)?;
         self.state.rebuilt = false;
+        // The local revision cache only ever holds what merging and conflict resolution need;
+        // pruning it is local, cheap and loses nothing (everything is refetchable or retained).
+        self.report.revs_pruned = self.prune_revs(crate::gc::DEFAULT_KEEP_REVISIONS, false)?.0;
         self.state.save(vault.keys())?;
         self.finish_report();
         Ok(std::mem::take(&mut self.report))
@@ -333,19 +338,5 @@ impl<P: Provider> Syncer<P> {
         self.report.conflicts = conflicts;
         self.report.dangling = dangling;
         self.report.needs_attention = attention;
-    }
-
-    /// Garbage collection of old revisions and segments is manual and not implemented yet
-    /// (`SYNC_PROTOCOL.md` section 9). Nothing is ever deleted by the engine.
-    ///
-    /// # Errors
-    /// Always [`Error::NotImplemented`].
-    pub fn collect_garbage(&mut self, _vault: &Unlocked) -> Result<()> {
-        // TODO(phase 4 follow-up): implement section 9 rules 1-5 (own objects and segments
-        // only, checkpoint acknowledgements, grace period, K = 5), behind an explicit
-        // "clean up old versions" action.
-        Err(Error::NotImplemented(
-            "garbage collection (SYNC_PROTOCOL.md section 9)",
-        ))
     }
 }

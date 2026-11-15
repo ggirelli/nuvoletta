@@ -35,6 +35,8 @@ pub struct Faults {
     pub ops: usize,
     /// Mutating operations seen: `put:<name>` or `delete:<name>`.
     pub mutations: Vec<String>,
+    /// Names requested with `get`, in order.
+    pub gets: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -89,7 +91,8 @@ impl Provider for Faulty {
 
     fn get(&self, name: &str) -> Result<Vec<u8>, ProviderError> {
         self.tick()?;
-        let f = self.faults.lock().unwrap();
+        let mut f = self.faults.lock().unwrap();
+        f.gets.push(name.to_owned());
         if matches(&f.hidden, name) {
             return Err(ProviderError::NotFound(name.to_owned()));
         }
@@ -204,6 +207,25 @@ impl Device {
         self.syncer.heads(id)
     }
 
+    /// Collect garbage as if it were `days` days later than now.
+    pub fn gc(&mut self, days: i64, dry_run: bool) -> nuvoletta_sync::GcReport {
+        self.try_gc(days, dry_run)
+            .unwrap_or_else(|e| panic!("{} gc failed: {e}", self.name))
+    }
+
+    pub fn try_gc(
+        &mut self,
+        days: i64,
+        dry_run: bool,
+    ) -> nuvoletta_sync::Result<nuvoletta_sync::GcReport> {
+        let opts = nuvoletta_sync::GcOptions {
+            dry_run,
+            now_ms: now_ms() + days * 24 * 60 * 60 * 1000,
+            ..nuvoletta_sync::GcOptions::default()
+        };
+        self.syncer.collect_garbage(&self.vault, &opts)
+    }
+
     pub fn exists(&self, id: &NoteId) -> bool {
         self.vault.summary(id).is_some()
     }
@@ -311,6 +333,28 @@ impl World {
             }
         }
         self.seen_files = now;
+    }
+
+    /// Like `converge`, but remote files may legitimately disappear (garbage collection).
+    pub fn converge_gc(&mut self, devs: &mut [&mut Device]) {
+        for round in 0..16 {
+            let mut changed = false;
+            for d in devs.iter_mut() {
+                let r = d.sync();
+                changed |= r.intents_created
+                    + r.objects_pushed
+                    + r.segments_uploaded
+                    + r.entries_applied
+                    + r.objects_fetched
+                    + r.fast_forwards
+                    + r.auto_merges
+                    > 0;
+            }
+            if !changed {
+                return;
+            }
+            assert!(round < 15, "devices did not settle");
+        }
     }
 
     /// Sync every device in turn until a whole round changes nothing.

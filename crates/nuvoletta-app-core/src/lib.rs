@@ -38,8 +38,8 @@ pub use settings::{DEFAULT_AUTO_LOCK_MINUTES, MAX_AUTO_LOCK_MINUTES, Settings, p
 pub use sync::SyncTiming;
 pub use sync_settings::{SyncSettings, check_sync_folder};
 pub use sync_types::{
-    AttentionItem, AttentionReason, ConflictAction, ConflictItem, ConflictKind, HeadDetail,
-    HeadView, InvalidInfo, ResolveOutcome, StrayInfo, SyncEvent, SyncFinished, SyncNotice,
-    SyncProblem, SyncState, SyncStatus,
+    AttentionItem, AttentionReason, CleanupSummary, ConflictAction, ConflictItem, ConflictKind,
+    HeadDetail, HeadView, InvalidInfo, ResolveOutcome, StrayInfo, SyncEvent, SyncFinished,
+    SyncNotice, SyncProblem, SyncState, SyncStatus,
 };
 pub use tree::{TreeRow, build_tree};

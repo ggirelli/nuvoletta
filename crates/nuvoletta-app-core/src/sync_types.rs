@@ -212,3 +212,25 @@ pub struct SyncFinished {
     /// Something the user must be told about the open note or the sync outcome.
     pub message: Option<String>,
 }
+
+/// What "Clean up old versions" would do (a preview) or did (a result). Counts and sizes only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CleanupSummary {
+    /// This is a preview: nothing was deleted.
+    pub dry_run: bool,
+    /// Why nothing can be cleaned up right now, in words a person can act on.
+    pub unavailable: Option<String>,
+    /// Old versions (files in the sync folder) removed, or that would be.
+    pub old_versions: usize,
+    /// Bytes they take in the sync folder.
+    pub old_version_bytes: u64,
+    /// Leftover files of interrupted edits removed, or that would be.
+    pub leftovers: usize,
+    /// Bytes they take.
+    pub leftover_bytes: u64,
+    /// Versions kept: the current ones, their direct predecessors, the newest few of every note,
+    /// anything recent or not yet seen by every device, and other devices' files.
+    pub kept: usize,
+    /// Old copies removed from this device's local cache, or that would be.
+    pub cache_entries: usize,
+}

@@ -612,3 +612,47 @@ fn stray_files_are_listed_and_never_touched() {
     );
     assert_eq!(fs::read(&stray).unwrap(), b"hello");
 }
+
+#[test]
+fn cleanup_previews_without_deleting_and_is_unavailable_while_busy_or_locked() {
+    let w = World::new();
+    let mut a = w.first("a");
+    let mut b = w.join("b", &a);
+    let id = a.write("N", "v0");
+    for i in 1..=8 {
+        a.sync();
+        b.sync();
+        a.set_body(id, &format!("v{i}"));
+    }
+    a.sync();
+    b.sync();
+    a.sync();
+    let count = |p: &Path| {
+        fn walk(p: &Path) -> usize {
+            fs::read_dir(p)
+                .unwrap()
+                .map(|e| {
+                    let p = e.unwrap().path();
+                    if p.is_dir() { walk(&p) } else { 1 }
+                })
+                .sum()
+        }
+        walk(p)
+    };
+    let before = count(&w.shared);
+    let preview = a.app.cleanup_preview().unwrap();
+    assert!(preview.dry_run && preview.unavailable.is_none());
+    assert_eq!(count(&w.shared), before);
+    // Everything is far too recent for the real run (30-day grace): nothing is deleted.
+    let done = a.app.cleanup_run().unwrap();
+    assert!(!done.dry_run);
+    assert_eq!(done.old_versions, 0);
+    assert!(done.kept > 0);
+    assert_eq!(count(&w.shared), before);
+
+    a.app.sync_now().unwrap();
+    assert!(matches!(a.app.cleanup_preview(), Err(Error::SyncBusy)));
+    assert!(a.app.wait_sync().is_some());
+    a.app.lock(false).unwrap();
+    assert!(matches!(a.app.cleanup_preview(), Err(Error::Locked)));
+}

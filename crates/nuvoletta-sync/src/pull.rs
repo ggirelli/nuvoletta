@@ -10,7 +10,7 @@ use crate::log::{KIND_DELETE, KIND_PUT, ParsedEntry, SegmentError, open_segment}
 use crate::names::{Class, RemoteName, classify};
 use crate::provider::{Provider, ProviderError, RemoteEntry};
 use crate::push::stamp;
-use crate::state::{Inv, Retry};
+use crate::state::{Buffered, Inv, Retry};
 use nuvoletta_core::now_ms;
 use nuvoletta_storage::Unlocked;
 use std::collections::{BTreeMap, HashMap};
@@ -20,6 +20,11 @@ struct SegRef<'a> {
     first_seq: u64,
     copy: bool,
 }
+
+/// Upper bound for the bytes of segments buffered after gaps (all devices together). A hostile
+/// provider cannot make local state grow past it; segments over the bound are simply refetched
+/// every cycle, as without buffering.
+const MAX_BUFFERED_BYTES: usize = 32 * 1024 * 1024;
 
 enum Outcome {
     Applied,
@@ -88,6 +93,18 @@ impl<P: Provider> Syncer<P> {
         for (device, list) in &segs {
             self.pull_device(vault, *device, list)?;
         }
+        // A buffered segment whose file is no longer listed is dropped: what the remote shows
+        // now is what counts (it is fetched again if it comes back).
+        let listed: std::collections::HashSet<&str> =
+            listing.iter().map(|e| e.name.as_str()).collect();
+        let before = self.state.pending.buffered.len();
+        self.state
+            .pending
+            .buffered
+            .retain(|n, _| listed.contains(n.as_str()));
+        if before != self.state.pending.buffered.len() {
+            self.state.touch_pending();
+        }
         self.check_rollbacks(&segs);
         self.check_claims();
         Ok(())
@@ -105,7 +122,16 @@ impl<P: Provider> Syncer<P> {
             .get(&device)
             .is_some_and(|p| p.fork.is_some())
         {
-            return Ok(()); // frozen: its files are evidence, never applied
+            // Frozen: its files are evidence, never applied.
+            let before = self.state.pending.buffered.len();
+            self.state
+                .pending
+                .buffered
+                .retain(|_, b| b.device != device);
+            if before != self.state.pending.buffered.len() {
+                self.state.touch_pending();
+            }
+            return Ok(());
         }
         let mut gap: Option<u64> = None;
         for s in list {
@@ -117,12 +143,35 @@ impl<P: Provider> Syncer<P> {
             if known {
                 continue;
             }
-            let bytes = match self.provider.get(&s.entry.name) {
-                Ok(b) => b,
-                Err(ProviderError::NotFound(_)) => continue,
-                Err(e) => return Err(e.into()),
+            // Section 6.3 step 4: a segment that arrived after a gap was verified and buffered
+            // earlier; use that copy instead of fetching it again, as long as the listing shows
+            // the same file.
+            let buffered = self
+                .state
+                .pending
+                .buffered
+                .get(&s.entry.name)
+                .filter(|b| {
+                    b.device == device && b.size == s.entry.size && b.etag == stamp(s.entry)
+                })
+                .map(|b| b.bytes.clone());
+            let from_buffer = buffered.is_some();
+            let bytes = match buffered {
+                Some(b) => b,
+                None => match self.provider.get(&s.entry.name) {
+                    Ok(b) => b,
+                    Err(ProviderError::NotFound(_)) => continue,
+                    Err(e) => return Err(e.into()),
+                },
             };
-            match self.process_segment(vault, device, s, &bytes)? {
+            let outcome = self.process_segment(vault, device, s, &bytes)?;
+            if !matches!(outcome, Outcome::Gap(_))
+                && self.state.pending.buffered.remove(&s.entry.name).is_some()
+            {
+                // Applied, or it turned out invalid or forked now: handled as for any segment.
+                self.state.touch_pending();
+            }
+            match outcome {
                 Outcome::Applied => {
                     self.state.inventory.insert(
                         s.entry.name.clone(),
@@ -134,7 +183,12 @@ impl<P: Provider> Syncer<P> {
                     );
                     self.state.touch_inventory();
                 }
-                Outcome::Gap(expected) => gap = Some(expected),
+                Outcome::Gap(expected) => {
+                    gap = Some(expected);
+                    if !from_buffer {
+                        self.buffer_segment(device, s.entry, bytes);
+                    }
+                }
                 Outcome::Forked => break,
                 Outcome::NotArrived | Outcome::Invalid => {}
             }
@@ -175,6 +229,30 @@ impl<P: Provider> Syncer<P> {
             }
         }
         Ok(())
+    }
+
+    /// Keep a verified segment that arrived after a gap (bounded, see [`MAX_BUFFERED_BYTES`]).
+    fn buffer_segment(&mut self, device: DeviceId, entry: &RemoteEntry, bytes: Vec<u8>) {
+        let used: usize = self
+            .state
+            .pending
+            .buffered
+            .values()
+            .map(|b| b.bytes.len())
+            .sum();
+        if used + bytes.len() > MAX_BUFFERED_BYTES {
+            return;
+        }
+        self.state.pending.buffered.insert(
+            entry.name.clone(),
+            Buffered {
+                device,
+                size: entry.size,
+                etag: stamp(entry),
+                bytes,
+            },
+        );
+        self.state.touch_pending();
     }
 
     fn process_segment(

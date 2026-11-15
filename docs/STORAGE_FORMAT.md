@@ -69,6 +69,8 @@ under `.nuvoletta/sync-state/`, all local, none uploaded:
 | `journal`, `peers`, `notes`, `inventory`, `pending`, `max-header-gen` | one CBOR document `[kind, value]` (the kind is the file name, so files cannot be swapped) sealed as envelope type 4, written atomically |
 | `revs/<revision id>.nvobj` | the exact type 1 envelope bytes of a revision (the remote file), written atomically |
 
+`pending` holds retry counters, the log segments buffered after a gap (their remote bytes, applied in order once the gap fills) and the remembered abandoned own objects (orphans) with their time. It is local and rebuildable: the buffered segments are refetched, retries restart and orphans older than the loss are no longer collected. Fields added to it later default to empty when absent. `revs/` is pruned after every sync cycle to what merging needs (SYNC_PROTOCOL section 6.1).
+
 The CBOR layouts are private to `nuvoletta-sync` (`state.rs`) and may change between versions
 without a format bump: everything but `device-id` and the unsent `journal` is rebuilt from the
 remote logs when missing or unreadable, and the engine never trusts these files for security (all
