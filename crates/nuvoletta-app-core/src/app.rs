@@ -872,12 +872,14 @@ impl Session {
         let Some(vault) = self.vault.as_ref() else {
             return;
         };
-        let notes: Vec<Note> = vault
-            .list()
-            .iter()
-            .filter_map(|s| vault.read_note(&s.id).ok())
-            .collect();
-        self.index.rebuild(notes.iter());
+        // Stream the notes: only one decrypted note is held at a time besides the index itself.
+        let mut index = Index::new();
+        for s in vault.list() {
+            if let Ok(note) = vault.read_note(&s.id) {
+                index.upsert(&note);
+            }
+        }
+        self.index = index;
     }
 
     /// Write the buffer if it differs from the stored body. On failure the buffer is kept.

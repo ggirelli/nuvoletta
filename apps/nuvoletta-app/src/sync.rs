@@ -236,8 +236,9 @@ fn WebDavSection(disabled: bool) -> Element {
         let c = c_poll.clone();
         async move {
             loop {
-                tokio::time::sleep(Duration::from_millis(200)).await;
-                if !*running.peek() {
+                let busy = *running.peek();
+                tokio::time::sleep(Duration::from_millis(if busy { 200 } else { 1000 })).await;
+                if !busy {
                     continue;
                 }
                 if let Some(ev) = c.quiet(App::poll_webdav) {
@@ -856,6 +857,9 @@ fn HeadBody(id: NoteId, rev: String) -> Element {
 
 /// Minutes between refreshes of the relative times.
 pub const CLOCK_REFRESH_SECS: u64 = 20;
+
+/// Seconds between timer ticks while no vault is unlocked (nothing to save or lock).
+pub const IDLE_TICK_SECS: u64 = 3;
 
 /// The current wall-clock time in ms (for relative times).
 pub fn wall_ms() -> i64 {

@@ -36,7 +36,12 @@ pub enum Resolution {
 /// Normalise for comparison: trim, NFC, Unicode lowercase. The single normalisation used by
 /// resolution, tags and the index.
 pub(crate) fn norm(s: &str) -> String {
-    s.trim().nfc().collect::<String>().to_lowercase()
+    let s = s.trim();
+    if s.is_ascii() {
+        // NFC is the identity on ASCII and Unicode lowercasing agrees with ASCII lowercasing.
+        return s.to_ascii_lowercase();
+    }
+    s.nfc().collect::<String>().to_lowercase()
 }
 
 /// Normalise a wikilink target: strip leading and trailing `/`, then [`norm`]. Empty means the
@@ -96,5 +101,25 @@ where
         0 => Resolution::Unresolved,
         1 => Resolution::Resolved(loose[0]),
         _ => Resolution::Ambiguous(loose),
+    }
+}
+
+#[cfg(test)]
+mod norm_tests {
+    use super::norm;
+    use unicode_normalization::UnicodeNormalization;
+
+    #[test]
+    fn the_ascii_fast_path_agrees_with_the_general_one() {
+        for s in [
+            "",
+            "  Hello World ",
+            "ABC-def_123",
+            "Tab\tand\nnewline",
+            "a/B/c",
+        ] {
+            assert_eq!(norm(s), s.trim().nfc().collect::<String>().to_lowercase());
+        }
+        assert_eq!(norm("Caf\u{e9}"), norm("Cafe\u{301}"));
     }
 }

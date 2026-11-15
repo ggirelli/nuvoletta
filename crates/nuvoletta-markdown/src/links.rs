@@ -43,6 +43,9 @@ pub(crate) fn split_dest(dest: &str) -> (String, Option<String>) {
 #[must_use]
 pub fn parse_links(body: &str) -> Vec<WikiLink> {
     let mut out = Vec::new();
+    if !body.contains("[[") {
+        return out; // no wikilink can exist: skip the Markdown parse
+    }
     let mut iter = Parser::new_ext(body, dialect()).into_offset_iter();
     while let Some((ev, range)) = iter.next() {
         let Event::Start(Tag::Link {
@@ -94,4 +97,15 @@ pub fn markdown_links(body: &str) -> Vec<MarkdownLink> {
             _ => None,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod fast_path_tests {
+    use super::parse_links;
+
+    #[test]
+    fn text_without_double_brackets_has_no_wikilinks() {
+        assert!(parse_links("# Title\n\nplain [x](y) text [single]").is_empty());
+        assert_eq!(parse_links("see [[Other]]").len(), 1);
+    }
 }

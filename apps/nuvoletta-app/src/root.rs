@@ -58,13 +58,20 @@ pub fn Root() -> Element {
         }
     });
 
-    // Once a second: autosave and inactivity lock.
+    // Once a second while unlocked (autosave and inactivity lock); every few seconds otherwise,
+    // when there is nothing to save or lock, to keep the idle app from waking the CPU.
     let c = core.clone();
     use_future(move || {
         let c = c.clone();
         async move {
             loop {
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                let unlocked = c.peek(|a| a.phase() == nuvoletta_app_core::Phase::Unlocked);
+                tokio::time::sleep(Duration::from_secs(if unlocked {
+                    1
+                } else {
+                    crate::sync::IDLE_TICK_SECS
+                }))
+                .await;
                 match c.quiet(nuvoletta_app_core::App::tick) {
                     TickOutcome::Idle => {}
                     TickOutcome::Saved | TickOutcome::SaveFailed(_) => c.bump(),
@@ -94,10 +101,10 @@ pub fn Root() -> Element {
         let c = c.clone();
         async move {
             loop {
-                tokio::time::sleep(Duration::from_millis(200)).await;
-                if c.peek(nuvoletta_app_core::App::sync_in_flight)
-                    && let Some(ev) = c.quiet(nuvoletta_app_core::App::poll_sync)
-                {
+                // Fast only while a cycle runs; the one-second tick starts and notices cycles.
+                let busy = c.peek(nuvoletta_app_core::App::sync_in_flight);
+                tokio::time::sleep(Duration::from_millis(if busy { 200 } else { 1000 })).await;
+                if busy && let Some(ev) = c.quiet(nuvoletta_app_core::App::poll_sync) {
                     crate::sync::handle_event(&c, ui, ev);
                 }
             }
@@ -105,11 +112,18 @@ pub fn Root() -> Element {
     });
 
     // Keep relative times ("synced 3 min ago") current.
-    use_future(move || async move {
-        loop {
-            tokio::time::sleep(Duration::from_secs(crate::sync::CLOCK_REFRESH_SECS)).await;
-            let mut t = ui.clock_ms;
-            t.set(crate::sync::wall_ms());
+    let core_clock = core.clone();
+    use_future(move || {
+        let core_clock = core_clock.clone();
+        async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(crate::sync::CLOCK_REFRESH_SECS)).await;
+                // Nothing shows relative times while locked, so do not re-render for them.
+                if core_clock.peek(|a| a.phase() == nuvoletta_app_core::Phase::Unlocked) {
+                    let mut t = ui.clock_ms;
+                    t.set(crate::sync::wall_ms());
+                }
+            }
         }
     });
 

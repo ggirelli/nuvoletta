@@ -117,3 +117,8 @@ fuzz-all seconds="60":
 [group('fuzz')]
 fuzz-seeds:
     cd fuzz && cargo +nightly run --release --bin gen_seeds
+
+# Timing benchmarks on a large vault (see docs/PERFORMANCE.md); NUVOLETTA_BENCH_NOTES sets the size
+[group('test')]
+bench:
+    cargo test --release -p nuvoletta-app-core --test perf -- --ignored --nocapture --test-threads=1
