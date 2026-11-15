@@ -90,9 +90,11 @@ impl<P: Provider> Syncer<P> {
         for list in segs.values_mut() {
             list.sort_by_key(|s| (s.copy, s.first_seq));
         }
+        let mut unreadable: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
         for (device, list) in &segs {
-            self.pull_device(vault, *device, list)?;
+            self.pull_device(vault, *device, list, &mut unreadable)?;
         }
+        self.track_unreadable(&unreadable);
         // A buffered segment whose file is no longer listed is dropped: what the remote shows
         // now is what counts (it is fetched again if it comes back).
         let listed: std::collections::HashSet<&str> =
@@ -115,6 +117,7 @@ impl<P: Provider> Syncer<P> {
         vault: &Unlocked,
         device: DeviceId,
         list: &[SegRef<'_>],
+        unreadable: &mut std::collections::BTreeSet<String>,
     ) -> Result<()> {
         if self
             .state
@@ -190,7 +193,12 @@ impl<P: Provider> Syncer<P> {
                     }
                 }
                 Outcome::Forked => break,
-                Outcome::NotArrived | Outcome::Invalid => {}
+                Outcome::NotArrived => {
+                    if !s.copy {
+                        unreadable.insert(s.entry.name.clone());
+                    }
+                }
+                Outcome::Invalid => {}
             }
         }
         let have = self.state.peers.get(&device).map_or(0, |p| p.seq());
@@ -229,6 +237,48 @@ impl<P: Provider> Syncer<P> {
             }
         }
         Ok(())
+    }
+
+    /// A protocol-named segment that does not authenticate is "not yet arrived" (section 6.3
+    /// step 4), but not forever: after `retries_before_warning` cycles it is reported as
+    /// possibly corrupted or withheld. Counters of files that authenticate now, changed or are
+    /// gone are dropped.
+    fn track_unreadable(&mut self, now_unreadable: &std::collections::BTreeSet<String>) {
+        let me = self.state.device_id;
+        let mut changed = false;
+        for name in now_unreadable {
+            let Class::Protocol(RemoteName::Segment { device, first_seq }) = classify(name) else {
+                continue;
+            };
+            let have = self.state.peers.get(&device).map_or(0, |p| p.seq());
+            if first_seq <= have && device != me {
+                continue; // older than what was verified: harmless leftover
+            }
+            let r = self
+                .state
+                .pending
+                .unreadable
+                .entry(name.clone())
+                .or_insert(Retry {
+                    tries: 0,
+                    since: now_ms(),
+                });
+            r.tries += 1;
+            changed = true;
+            if r.tries >= self.cfg.retries_before_warning {
+                self.report
+                    .warnings
+                    .push(Warning::SegmentUnreadable { device, first_seq });
+            }
+        }
+        let before = self.state.pending.unreadable.len();
+        self.state
+            .pending
+            .unreadable
+            .retain(|n, _| now_unreadable.contains(n));
+        if changed || before != self.state.pending.unreadable.len() {
+            self.state.touch_pending();
+        }
     }
 
     /// Keep a verified segment that arrived after a gap (bounded, see [`MAX_BUFFERED_BYTES`]).
@@ -297,8 +347,15 @@ impl<P: Provider> Syncer<P> {
         for pe in &seg.entries {
             let seq = pe.entry.seq;
             if seq <= n {
-                let known = self.state.peers[&device].hashes[usize::try_from(seq - 1).unwrap_or(0)];
-                if known != pe.hash {
+                let known = self
+                    .state
+                    .peers
+                    .get(&device)
+                    .and_then(|p| usize::try_from(seq - 1).ok().and_then(|i| p.hashes.get(i)))
+                    .copied();
+                if let Some(known) = known
+                    && known != pe.hash
+                {
                     self.on_fork(vault, device, seq, vec![known, pe.hash])?;
                     if s.copy {
                         self.report.strays.push(StrayFile {
@@ -381,7 +438,7 @@ impl<P: Provider> Syncer<P> {
             return;
         }
         if let Some(seen) = &e.seen {
-            let peer = self.state.peers.get_mut(&device).expect("inserted above");
+            let peer = self.state.peers.entry(device).or_default();
             for (d, pos) in seen {
                 let slot = peer.claims.entry(*d).or_insert(*pos);
                 if pos.seq > slot.seq {
@@ -448,14 +505,14 @@ impl<P: Provider> Syncer<P> {
                 .get(device)
                 .map(|l| l.iter().filter(|s| !s.copy).collect::<Vec<_>>())
                 .unwrap_or_default();
-            let lasts: Vec<Option<u64>> = listed
+            // Only segments that were read and verified count. A listed file that does not
+            // authenticate (or has not been read yet) proves nothing about the log, so it must
+            // not hide a rollback; persistent ones are reported separately.
+            let remote = listed
                 .iter()
-                .map(|s| peer.segments.get(&s.first_seq).copied())
-                .collect();
-            if lasts.iter().any(Option::is_none) {
-                continue; // something listed has not been read yet: cannot judge
-            }
-            let remote = lasts.into_iter().flatten().max().unwrap_or(0);
+                .filter_map(|s| peer.segments.get(&s.first_seq).copied())
+                .max()
+                .unwrap_or(0);
             if remote < known {
                 found.push(Warning::Rollback {
                     device: *device,
@@ -476,8 +533,8 @@ impl<P: Provider> Syncer<P> {
                 continue;
             }
             for (device, pos) in &peer.claims {
-                if device == reporter {
-                    continue;
+                if device == reporter || pos.seq == 0 {
+                    continue; // sequence numbers start at 1; a zero claim says nothing
                 }
                 let target = self.state.peers.get(device);
                 if target.is_some_and(|t| t.fork.is_some()) {
@@ -485,9 +542,12 @@ impl<P: Provider> Syncer<P> {
                 }
                 let have = target.map_or(0, crate::state::Peer::seq);
                 if pos.seq <= have {
-                    let known =
-                        target.expect("have > 0").hashes[usize::try_from(pos.seq - 1).unwrap_or(0)];
-                    if known != pos.hash {
+                    let known = target.and_then(|t| {
+                        usize::try_from(pos.seq - 1)
+                            .ok()
+                            .and_then(|i| t.hashes.get(i))
+                    });
+                    if known.is_some_and(|k| *k != pos.hash) {
                         warnings.push(Warning::DivergentCheckpoint {
                             reporter: *reporter,
                             device: *device,

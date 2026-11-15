@@ -96,6 +96,14 @@ pub enum Warning {
         /// The sequence number expected next.
         expected_seq: u64,
     },
+    /// A log segment of a device that does not authenticate (truncated, corrupted or forged)
+    /// has stayed that way for several cycles. Other segments are unaffected.
+    SegmentUnreadable {
+        /// The device whose directory holds the file.
+        device: DeviceId,
+        /// First sequence number named by the file.
+        first_seq: u64,
+    },
     /// A referenced object has not arrived or fails verification after several cycles.
     ObjectUnavailable {
         /// The revision.
@@ -129,8 +137,9 @@ pub enum Warning {
         /// Highest generation on the remote now.
         remote: u32,
     },
-    /// A remote header file is invalid, belongs to another vault or differs from the local one
-    /// of the same generation.
+    /// A remote header file is invalid, belongs to another vault, fails its MAC under this
+    /// vault's keys or differs from the local one of the same generation. It is never counted
+    /// as a newer generation.
     HeaderInvalid {
         /// Generation named by the file.
         generation: u32,

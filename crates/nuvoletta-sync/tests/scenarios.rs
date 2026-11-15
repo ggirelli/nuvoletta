@@ -897,18 +897,13 @@ fn an_old_vault_header_generation_is_flagged() {
     a.sync();
     assert!(all_files(&w.remote).keys().any(|k| k.starts_with("h/")));
     // Pretend a newer generation was seen before; the remote now only has generation 1.
+    // A genuine newer generation: device b changes the passphrase and publishes the header.
     let mut b = w.join("b", &a);
+    b.vault
+        .change_passphrase("another long passphrase", nuvoletta_crypto::KdfParams::MIN_ACCEPTED)
+        .unwrap();
     b.sync();
-    drop(b);
-    // Hand-craft: bump max-header-gen by syncing against a remote that has a header file of a
-    // higher generation, then remove it.
-    let hdr = std::fs::read(w.remote.join(format!("h/{:08x}.nvhdr", 1))).unwrap();
-    let mut gen2 = hdr.clone();
-    gen2[10..14].copy_from_slice(&2u32.to_be_bytes());
-    std::fs::write(w.remote.join(format!("h/{:08x}.nvhdr", 2)), &gen2).unwrap();
     let r = a.sync();
-    // The fake generation-2 file fails the MAC-less checks only if invalid; it parses, so it is
-    // reported as newer than the local header.
     assert!(
         r.warnings
             .iter()

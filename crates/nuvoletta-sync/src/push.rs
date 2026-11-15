@@ -393,17 +393,23 @@ impl<P: Provider> Syncer<P> {
             let Class::Protocol(RemoteName::Header { generation }) = classify(&e.name) else {
                 continue;
             };
-            have_local |= generation == local_gen;
-            remote_max = remote_max.max(generation);
+            // A name proves nothing: only a header that parses, belongs to this vault, carries
+            // the generation it is named after and passes the header MAC under this vault's
+            // keys counts. Anything else is reported as invalid and ignored.
             let ok = match self.provider.get(&e.name) {
                 Ok(bytes) => nuvoletta_crypto::VaultHeader::parse(&bytes).is_ok_and(|h| {
                     h.vault_id() == vault_id
                         && h.generation() == generation
+                        && h.verify_mac(vault.keys())
                         && (generation != local_gen || bytes == header.as_bytes())
                 }),
-                Err(ProviderError::NotFound(_)) => true,
+                Err(ProviderError::NotFound(_)) => continue,
                 Err(e) => return Err(e.into()),
             };
+            if ok {
+                have_local |= generation == local_gen;
+                remote_max = remote_max.max(generation);
+            }
             if !ok {
                 self.report
                     .warnings
