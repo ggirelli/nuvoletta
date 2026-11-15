@@ -11,7 +11,8 @@ operated on. Sync state is out of scope here (`SYNC_PROTOCOL.md`, Phase 4).
   .nuvoletta/
     vault-header            236-byte vault header (CRYPTO_FORMAT section 2)
     device-state/           reserved (Phase 4), created when first needed
-    sync-state/             reserved (Phase 4): device-id, journal, peers, ... (envelope type 4)
+    sync-state/             reserved (Phase 4): device-id, journal, peers, ... (envelope type 4);
+                            revs/ caches verbatim type 1 revisions (SYNC_PROTOCOL section 6.1)
     cache/                  reserved: rebuildable caches (envelope type 4)
   notes/
     <note_id 32 lower-case hex>.nvnote    latest revision of the note: one envelope (type 1)
