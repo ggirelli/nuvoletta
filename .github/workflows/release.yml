@@ -1,0 +1,314 @@
+name: Release
+
+# Builds the release artifacts for every platform, then (on a version tag only) checksums, signs,
+# attests and attaches them to a DRAFT GitHub Release. A manual run is a dry run: it builds
+# everything and uploads the result as a workflow artifact, and publishes nothing.
+# Maintainer steps and the list of optional signing secrets: docs/RELEASING.md.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+# Least privilege: jobs get read access only; the publish job raises what it needs itself.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Third-party actions are pinned to commit SHAs (the comment names the tag). No build cache is
+# restored in this workflow, so a poisoned cache cannot reach a release artifact.
+jobs:
+  ci:
+    name: just ci
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Tag is on main
+        if: github.ref_type == 'tag'
+        run: |
+          git merge-base --is-ancestor HEAD origin/main \
+            || { echo "the tagged commit is not on main" >&2; exit 1; }
+      - name: Tag matches the workspace version
+        if: github.ref_type == 'tag'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(scripts/release/version.sh)
+          [ "$TAG" = "v$version" ] || { echo "tag $TAG does not match Cargo.toml version $version" >&2; exit 1; }
+      - run: rustup toolchain install --profile minimal
+      - uses: ./.github/actions/linux-deps
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2
+        with:
+          tool: just,cargo-deny
+      - run: just ci
+
+  linux:
+    name: Linux (tarball, AppImage, deb)
+    needs: ci
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install --profile minimal
+      - uses: ./.github/actions/linux-deps
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2
+        with:
+          tool: cargo-binstall
+      - run: cargo binstall --no-confirm --locked dioxus-cli@0.7.10
+      - name: Tarball (reproducible)
+        run: scripts/release/linux-tarball.sh dist
+      - name: AppImage and deb
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1" # runners have no FUSE
+        run: |
+          . scripts/release/env.sh
+          dx bundle --platform desktop --release --locked --package nuvoletta-app \
+            --package-types appimage --package-types deb --out-dir dist
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dist-linux
+          path: dist/*
+          if-no-files-found: error
+
+  macos:
+    name: macOS ${{ matrix.arch }}
+    needs: ci
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-15, arch: aarch64 }
+          - { os: macos-15-intel, arch: x86_64 }
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install --profile minimal
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2
+        with:
+          tool: cargo-binstall
+      - run: cargo binstall --no-confirm --locked dioxus-cli@0.7.10
+      - name: Build the app bundle
+        run: |
+          . scripts/release/env.sh
+          dx bundle --platform desktop --release --locked --package nuvoletta-app \
+            --package-types macos --out-dir bundle
+      - name: Disk image (signed and notarized only when the Apple secrets exist)
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ARCH: ${{ matrix.arch }}
+        run: scripts/release/macos-dmg.sh bundle dist "$ARCH"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dist-macos-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  windows:
+    name: Windows
+    needs: ci
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install --profile minimal
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2
+        with:
+          tool: cargo-binstall
+      - run: cargo binstall --no-confirm --locked dioxus-cli@0.7.10
+      - name: Build the MSI and NSIS installers
+        run: |
+          . scripts/release/env.sh
+          dx bundle --platform desktop --release --locked --package nuvoletta-app \
+            --package-types msi --package-types nsis --out-dir bundle
+      - name: Name, and sign with Authenticode when the certificate secret exists
+        env:
+          WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          version=$(scripts/release/version.sh)
+          mkdir dist
+          suffix=-unsigned
+          if [ -n "$WINDOWS_CERT_PFX_BASE64" ] && [ -n "$WINDOWS_CERT_PASSWORD" ]; then
+            suffix=
+            printf '%s' "$WINDOWS_CERT_PFX_BASE64" | base64 -d > "$RUNNER_TEMP/cert.pfx"
+            signtool=$(ls "/c/Program Files (x86)/Windows Kits/10/bin/"*/x64/signtool.exe | sort -V | tail -n1)
+          else
+            echo "no Windows certificate secret: installers are labelled unsigned"
+          fi
+          for f in bundle/*.msi bundle/*.exe; do
+            ext=${f##*.}
+            out="dist/nuvoletta-${version}-windows-x86_64${suffix}.${ext}"
+            cp "$f" "$out"
+            if [ -z "$suffix" ]; then
+              "$signtool" sign //f "$(cygpath -w "$RUNNER_TEMP/cert.pfx")" //p "$WINDOWS_CERT_PASSWORD" \
+                //fd SHA256 //tr http://timestamp.digicert.com //td SHA256 "$(cygpath -w "$out")"
+              "$signtool" verify //pa "$(cygpath -w "$out")"
+            fi
+          done
+          rm -f "$RUNNER_TEMP/cert.pfx"
+          ls dist
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dist-windows
+          path: dist/*
+          if-no-files-found: error
+
+  android:
+    name: Android
+    needs: ci
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install --profile minimal --target aarch64-linux-android
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2
+        with:
+          tool: cargo-binstall
+      - run: cargo binstall --no-confirm --locked dioxus-cli@0.7.10
+      - name: APK (signed with the release keystore only when the secrets exist)
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          # The runner image ships JDK 17, the Android SDK and the NDK.
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          scripts/release/android-apk.sh dist
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dist-android
+          path: dist/*
+          if-no-files-found: error
+
+  sbom:
+    name: SBOM
+    needs: ci
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install --profile minimal
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2
+        with:
+          tool: cargo-binstall
+      - run: cargo binstall --no-confirm --locked cargo-cyclonedx@0.5.10
+      - run: scripts/release/sbom.sh dist
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dist-sbom
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Checksums, signatures and draft release
+    needs: [linux, macos, windows, android, sbom]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # create the draft release
+      id-token: write # Sigstore keyless signing (OIDC)
+      attestations: write # build provenance
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0 # the release notes read the commit history
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+      - name: SHA256SUMS
+        working-directory: dist
+        run: |
+          export LC_ALL=C
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2
+        with:
+          tool: git-cliff@2.14.2
+      - name: Release notes
+        env:
+          TAG: ${{ github.ref_name }}
+          IS_TAG: ${{ github.ref_type == 'tag' }}
+        run: |
+          range=--unreleased
+          [ "$IS_TAG" = true ] && range=--latest
+          {
+            echo "Verify every download before you run it: see **Verify your download** at"
+            echo "https://ggirelli.github.io/nuvoletta/RELEASING/#verify-your-download."
+            echo
+            unsigned=$(cd dist && ls | grep -- '-unsigned' || true)
+            if [ -n "$unsigned" ]; then
+              echo "> **Unsigned platform builds.** The files below carry no platform signature (no Apple notarization,"
+              echo "> Windows Authenticode or Android release key). Your OS will warn you; check them against"
+              echo "> \`SHA256SUMS\` and the build provenance instead."
+              if grep -q android <<< "$unsigned"; then
+                echo "> The Android APK is signed with a throwaway key, so it cannot be upgraded in place by a later release."
+              fi
+              echo ">"
+              # shellcheck disable=SC2001
+              sed 's/^/> - `/; s/$/`/' <<< "$unsigned"
+              echo
+            fi
+            echo "Every file is covered by a GitHub build provenance attestation, and \`SHA256SUMS\` is signed with Sigstore"
+            echo "(\`SHA256SUMS.sigstore.json\`). There is no auto-updater."
+            echo
+            git-cliff -c cliff.toml "$range" --strip all
+          } > notes.md
+          cat notes.md
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+        if: github.ref_type == 'tag'
+      - name: Sign SHA256SUMS with Sigstore (keyless)
+        if: github.ref_type == 'tag'
+        working-directory: dist
+        run: cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
+      - name: Build provenance attestations
+        if: github.ref_type == 'tag'
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: |
+            dist/*
+            !dist/SHA256SUMS.sigstore.json
+      - name: Draft the GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          flags=()
+          case "$TAG" in *-*) flags+=(--prerelease) ;; esac
+          gh release create "$TAG" --draft --verify-tag "${flags[@]}" \
+            --title "Nuvoletta ${TAG#v}" --notes-file notes.md dist/*
+      - name: Keep the dry-run output
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dry-run-release
+          path: |
+            dist/*
+            notes.md
+          retention-days: 7
