@@ -262,14 +262,15 @@ fn a_new_device_joins_from_the_synced_folder_with_the_passphrase_alone() {
 
     let dir = tmp.path().join("new");
     install_header(&dir, &folder_header(&shared, 1));
+    // Checked before the device is opened: a vault is open in one instance at a time.
+    assert!(
+        new_app_wrong_pw(&dir),
+        "a wrong passphrase must not unlock the new device"
+    );
     let mut b = Dev {
         app: reopen(&dir, PW),
         dir,
     };
-    assert!(
-        new_app_wrong_pw(&b.dir),
-        "a wrong passphrase must not unlock the new device"
-    );
     b.app.configure_sync(&shared).unwrap();
     b.sync_ok();
     assert_eq!(b.bodies(), want);

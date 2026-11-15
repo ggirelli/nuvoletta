@@ -115,7 +115,7 @@ fn settings_are_stored_per_vault_on_this_device_and_can_be_disabled() {
     assert!(sync_files(&a.dir).contains(&"sync.json".to_owned()));
 
     // Reopening the vault restores the setting.
-    a.app.lock(false).unwrap();
+    a.app.close_vault(false).unwrap();
     let (mut again, _c) = World::app();
     again.open_vault(&a.dir).unwrap();
     again.unlock_with_passphrase(PW).unwrap();
@@ -577,7 +577,10 @@ fn autosave_after_sync_over_unsaved_edits_becomes_a_conflict_not_last_write_wins
         })
         .collect();
     assert!(texts.iter().any(|t| t == "REMOTE EDIT on a"), "{texts:?}");
-    assert!(texts.iter().any(|t| t == "v1 plus local typing"), "{texts:?}");
+    assert!(
+        texts.iter().any(|t| t == "v1 plus local typing"),
+        "{texts:?}"
+    );
 }
 
 #[test]

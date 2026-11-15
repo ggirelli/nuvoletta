@@ -111,7 +111,11 @@ impl Entry {
         if self.seen.as_ref().is_some_and(|s| s.len() > MAX_SEEN) {
             return Err("too many seen positions");
         }
-        if self.seen.as_ref().is_some_and(|s| s.values().any(|p| p.seq == 0)) {
+        if self
+            .seen
+            .as_ref()
+            .is_some_and(|s| s.values().any(|p| p.seq == 0))
+        {
             return Err("seen position with sequence number zero");
         }
         match self.kind {

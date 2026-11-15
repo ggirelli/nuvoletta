@@ -900,7 +900,10 @@ fn an_old_vault_header_generation_is_flagged() {
     // A genuine newer generation: device b changes the passphrase and publishes the header.
     let mut b = w.join("b", &a);
     b.vault
-        .change_passphrase("another long passphrase", nuvoletta_crypto::KdfParams::MIN_ACCEPTED)
+        .change_passphrase(
+            "another long passphrase",
+            nuvoletta_crypto::KdfParams::MIN_ACCEPTED,
+        )
         .unwrap();
     b.sync();
     let r = a.sync();

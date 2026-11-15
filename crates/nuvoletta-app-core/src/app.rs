@@ -269,6 +269,9 @@ impl App {
     /// The vault is unlocked already, or `dir` is not a valid vault.
     pub fn open_vault(&mut self, dir: &Path) -> Result<()> {
         self.not_unlocked()?;
+        // Release the vault chosen before (its single-instance lock), so choosing the same one
+        // again works; if the new one cannot be opened the picker is shown.
+        self.state = State::NoVault;
         self.state = State::Locked(Box::new(Locked::open(dir)?));
         self.settings.last_vault = Some(dir.to_path_buf());
         Ok(())

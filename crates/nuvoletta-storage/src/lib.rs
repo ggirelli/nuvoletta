@@ -10,6 +10,7 @@
 pub mod error;
 pub mod fsutil;
 pub mod layout;
+pub mod lock;
 pub mod locked;
 pub mod portable;
 pub mod trash;

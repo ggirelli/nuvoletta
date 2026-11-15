@@ -39,7 +39,9 @@ fn junk_segment_does_not_suppress_the_rollback_warning() {
     );
     // L1: the persistent junk file itself is reported, once it stays unreadable.
     assert!(
-        all.iter().any(|x| matches!(x, Warning::SegmentUnreadable { device, first_seq: 255 } if *device == dev)),
+        all.iter().any(
+            |x| matches!(x, Warning::SegmentUnreadable { device, first_seq: 255 } if *device == dev)
+        ),
         "{all:?}"
     );
 }
@@ -60,7 +62,12 @@ fn a_persistently_unreadable_newest_segment_is_reported() {
     )
     .unwrap();
     let first = b.sync();
-    assert!(!first.warnings.iter().any(|x| matches!(x, Warning::SegmentUnreadable { .. })));
+    assert!(
+        !first
+            .warnings
+            .iter()
+            .any(|x| matches!(x, Warning::SegmentUnreadable { .. }))
+    );
     let mut seen = false;
     for _ in 0..3 {
         seen |= b
@@ -103,7 +110,13 @@ fn checkpoint_seen_seq_zero_is_rejected_not_a_panic() {
     let dev = Id16([0x55; 16]);
     let mut seen = BTreeMap::new();
     for x in [0x66u8, 0x77] {
-        seen.insert(Id16([x; 16]), SeenPos { seq: 0, hash: Hash32::ZERO });
+        seen.insert(
+            Id16([x; 16]),
+            SeenPos {
+                seq: 0,
+                hash: Hash32::ZERO,
+            },
+        );
     }
     plant(&w, &a, dev, vec![checkpoint_with(seen)]);
     for round in 0..3 {
@@ -133,12 +146,22 @@ fn checkpoint_seen_seq_zero_about_a_known_device_is_harmless() {
     a.sync();
     b.sync();
     let mut seen = BTreeMap::new();
-    seen.insert(a.syncer.device_id(), SeenPos { seq: 0, hash: Hash32::ZERO });
+    seen.insert(
+        a.syncer.device_id(),
+        SeenPos {
+            seq: 0,
+            hash: Hash32::ZERO,
+        },
+    );
     plant(&w, &a, Id16([0x55; 16]), vec![checkpoint_with(seen)]);
     let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| b.try_sync()))
         .expect("sync must not panic")
         .expect("sync must not fail");
-    assert!(!r.warnings.iter().any(|x| matches!(x, Warning::DivergentCheckpoint { .. })));
+    assert!(
+        !r.warnings
+            .iter()
+            .any(|x| matches!(x, Warning::DivergentCheckpoint { .. }))
+    );
 }
 
 /// M2: a junk header file under a protocol name is invalid and neither raises "newer" nor
@@ -151,17 +174,30 @@ fn junk_header_file_is_invalid_not_newer_and_does_not_poison_state() {
     std::fs::write(w.remote.join("h/ffffffff.nvhdr"), b"junk").unwrap();
     let r = a.sync();
     assert!(
-        r.warnings
-            .iter()
-            .any(|x| matches!(x, Warning::HeaderInvalid { generation: 0xffff_ffff })),
+        r.warnings.iter().any(|x| matches!(
+            x,
+            Warning::HeaderInvalid {
+                generation: 0xffff_ffff
+            }
+        )),
         "{:?}",
         r.warnings
     );
-    assert!(!r.warnings.iter().any(|x| matches!(x, Warning::HeaderNewer { .. })));
+    assert!(
+        !r.warnings
+            .iter()
+            .any(|x| matches!(x, Warning::HeaderNewer { .. }))
+    );
     std::fs::remove_file(w.remote.join("h/ffffffff.nvhdr")).unwrap();
     a.restart();
     let r = a.sync();
-    assert!(!r.warnings.iter().any(|x| matches!(x, Warning::HeaderRollback { .. })), "{:?}", r.warnings);
+    assert!(
+        !r.warnings
+            .iter()
+            .any(|x| matches!(x, Warning::HeaderRollback { .. })),
+        "{:?}",
+        r.warnings
+    );
 }
 
 /// M2: a structurally valid header of the same vault id and a higher generation but with a bad
@@ -175,8 +211,16 @@ fn forged_header_with_a_bad_mac_is_not_newer() {
     forged[10..14].copy_from_slice(&7u32.to_be_bytes());
     std::fs::write(w.remote.join("h/00000007.nvhdr"), &forged).unwrap();
     let r = a.sync();
-    assert!(r.warnings.iter().any(|x| matches!(x, Warning::HeaderInvalid { generation: 7 })));
-    assert!(!r.warnings.iter().any(|x| matches!(x, Warning::HeaderNewer { .. })));
+    assert!(
+        r.warnings
+            .iter()
+            .any(|x| matches!(x, Warning::HeaderInvalid { generation: 7 }))
+    );
+    assert!(
+        !r.warnings
+            .iter()
+            .any(|x| matches!(x, Warning::HeaderNewer { .. }))
+    );
 }
 
 /// M2: junk squatting on the name of the next generation must not stop the genuine new header
@@ -215,7 +259,11 @@ fn a_legacy_max_header_gen_file_is_discarded() {
     a.restart();
     assert!(!state.join("max-header-gen").exists());
     let r = a.sync();
-    assert!(!r.warnings.iter().any(|x| matches!(x, Warning::HeaderRollback { .. })));
+    assert!(
+        !r.warnings
+            .iter()
+            .any(|x| matches!(x, Warning::HeaderRollback { .. }))
+    );
 }
 
 fn find_state_dir(root: &std::path::Path) -> Option<std::path::PathBuf> {

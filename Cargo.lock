@@ -3095,6 +3095,7 @@ name = "nuvoletta-storage"
 version = "0.0.0"
 dependencies = [
  "getrandom 0.3.4",
+ "libc",
  "nuvoletta-core",
  "nuvoletta-crypto",
  "tempfile",

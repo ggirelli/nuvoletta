@@ -64,8 +64,14 @@ fn verify_mac_authenticates_headers_of_the_same_vault_only() {
     let c = created();
     let keys = c.vault.keys();
     assert!(c.vault.header().verify_mac(keys));
-    let newer = c.vault.change_passphrase("another long passphrase", FAST).unwrap();
-    assert!(newer.verify_mac(keys), "same DEK: a later generation verifies");
+    let newer = c
+        .vault
+        .change_passphrase("another long passphrase", FAST)
+        .unwrap();
+    assert!(
+        newer.verify_mac(keys),
+        "same DEK: a later generation verifies"
+    );
     let mut b = c.vault.header().as_bytes().to_vec();
     b[100] ^= 1;
     assert!(!VaultHeader::parse(&b).unwrap().verify_mac(keys));

@@ -5,6 +5,7 @@ use crate::fsutil::{read_regular, write_atomic};
 use crate::layout::{
     HEADER_FILE, TMP_PREFIX, header_path, meta_dir, note_file_name, notes_dir, parse_note_file_name,
 };
+use crate::lock::VaultLock;
 use crate::locked::Locked;
 use nuvoletta_core::{Note, NoteId, NotePath};
 use nuvoletta_crypto::{
@@ -70,15 +71,17 @@ pub struct Unlocked {
     vault: Vault,
     index: HashMap<NoteId, NoteSummary>,
     issues: Vec<Issue>,
+    lock: VaultLock,
 }
 
 impl Unlocked {
-    pub(crate) fn new(root: PathBuf, vault: Vault) -> Result<Self> {
+    pub(crate) fn new(root: PathBuf, vault: Vault, lock: VaultLock) -> Result<Self> {
         let mut u = Self {
             root,
             vault,
             index: HashMap::new(),
             issues: Vec::new(),
+            lock,
         };
         u.rebuild_index()?;
         let _ = u.purge_expired(); // best effort: retention housekeeping must not block unlock
@@ -88,7 +91,7 @@ impl Unlocked {
     /// Lock the vault: keys and the index are dropped (zeroized).
     #[must_use]
     pub fn lock(self) -> Locked {
-        Locked::from_parts(self.root.clone(), self.vault.header().clone())
+        Locked::from_parts(self.root.clone(), self.vault.header().clone(), self.lock)
     }
 
     /// The vault directory.
@@ -258,7 +261,8 @@ impl Unlocked {
         Ok(self.load(id)?.0)
     }
 
-    fn store(&mut self, note: &Note) -> Result<()> {
+    /// Seal `note` as a note envelope. Returns the bytes and the revision (object) id.
+    pub(crate) fn seal_note(&self, note: &Note) -> Result<(Vec<u8>, [u8; 16])> {
         note.validate()?;
         let mut payload = NotePayload {
             schema_version: 1,
@@ -274,8 +278,13 @@ impl Unlocked {
         payload.zeroize();
         let meta = ObjectMeta::new(ObjType::NoteRevision, *note.id.as_bytes())?;
         let envelope = seal(self.vault.keys(), &meta, &encoded?)?;
+        Ok((envelope, meta.object_id))
+    }
+
+    fn store(&mut self, note: &Note) -> Result<()> {
+        let (envelope, object_id) = self.seal_note(note)?;
         write_atomic(&notes_dir(&self.root), &note_file_name(&note.id), &envelope)?;
-        self.index.insert(note.id, summary_of(note, meta.object_id));
+        self.index.insert(note.id, summary_of(note, object_id));
         Ok(())
     }
 

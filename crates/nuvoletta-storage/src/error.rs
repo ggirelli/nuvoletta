@@ -42,6 +42,9 @@ pub enum Error {
     /// The vault header on disk changed underneath this session; reopen the vault.
     #[error("vault header changed on disk since unlock")]
     HeaderChanged,
+    /// Another Nuvoletta window or process has this vault open.
+    #[error("this vault is already open in another Nuvoletta window or process")]
+    VaultInUse,
     /// The note file does not belong at this location (id mismatch between name and contents).
     #[error("note file does not match its id")]
     IdMismatch,

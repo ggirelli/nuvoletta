@@ -57,7 +57,8 @@ opened for sync on Windows). A crash leaves either the old file or the new one, 
 - Only names matching `^[0-9a-f]{32}\.nvnote$` are notes (lower-case only, so case-insensitive
   filesystems cannot make two names equal; no Unicode in names, so normalisation is irrelevant;
   note paths are virtual and never used as file names).
-- Symlinks are never followed: a symlinked header, `.nuvoletta/`, `notes/` or note file is
+- Symlinks are never followed (files are opened with `O_NOFOLLOW` on Unix, so a swap between
+  check and open is refused too): a symlinked header, `.nuvoletta/`, `notes/` or note file is
   refused or reported. Names never come from untrusted input, so path traversal is impossible.
 - Identity comes from the authenticated envelope, not the name: a file whose `scope_id` or
   payload `note_id` differs from its name is corrupt. A copy under another name (for example
@@ -79,6 +80,10 @@ the sync scan only reads `notes/`, so a delete that moves is seen as a delete.
   Restore renames the file back, then rewrites the index; a stale entry is pruned.
 - **Both places.** A note present in both is live. The trash copy is deleted only if its bytes are
   identical; otherwise it stays (hidden from the list) until it expires.
+- **Deleting an id that is already in the trash.** If the trash holds a different version under
+  the id (the id came back to life and is deleted again), the older version is not overwritten:
+  it is re-sealed under a new id, title suffixed " (earlier version)", keeping its deletion time.
+  An identical copy is not duplicated.
 - **Retention.** At unlock (and when the app lists the trash) entries older than 30 days (the sync
   GC grace period) are deleted. A missing, tampered or unreadable index never shortens retention:
   files without a time are stamped with the current time. There is no API to empty the trash or
@@ -112,6 +117,18 @@ when the state is loaded.
 verbatim) and `Unlocked::install_revision()` (authenticate, then atomically replace the note file
 with the given envelope, creating it if needed). The `fsutil` helpers are public, and
 `write_new_atomic` creates a file only if it does not exist (hard link from a temporary file).
+
+## 5. Single-instance lock
+
+`.nuvoletta/lock` is an empty file (mode 0600, opened without following symlinks) on which every
+`Locked` or `Unlocked` handle of a vault holds an advisory exclusive OS lock (`flock` /
+`LockFileEx`). A second opener, in this or another process, gets `Error::VaultInUse`; the lock is
+taken before anything else is touched, so another instance's in-flight `.tmp-*` files are never
+cleaned. `lock()` and unlocking share one lock, so a session keeps it until the last handle is
+dropped. The OS drops it when the process dies, so a crash leaves no stale lock and a leftover
+`lock` file is harmless. File systems without lock support (`Unsupported`) open without the
+protection. It is advisory: it prevents two Nuvoletta instances losing each other's edits, it is
+not a defence against a hostile local process. No format change; the file is never synced.
 
 ## Implementation notes
 

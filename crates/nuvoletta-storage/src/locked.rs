@@ -3,6 +3,7 @@
 use crate::error::{Error, Result};
 use crate::fsutil::{clean_temp_files, ensure_real_dir, read_regular, write_atomic};
 use crate::layout::{HEADER_FILE, header_path, meta_dir, notes_dir};
+use crate::lock::VaultLock;
 use crate::unlocked::Unlocked;
 use nuvoletta_crypto::header::HEADER_LEN;
 use nuvoletta_crypto::{KdfParams, RecoveryKey, Vault, VaultHeader};
@@ -14,6 +15,7 @@ use std::path::{Path, PathBuf};
 pub struct Locked {
     root: PathBuf,
     header: VaultHeader,
+    lock: VaultLock,
 }
 
 impl Locked {
@@ -32,13 +34,14 @@ impl Locked {
         fs::create_dir_all(root)?;
         let meta = meta_dir(root);
         ensure_real_dir(&meta, true)?;
+        let lock = VaultLock::acquire(root)?;
         if fs::symlink_metadata(header_path(root)).is_ok() {
             return Err(Error::VaultExists);
         }
         let created = Vault::create(passphrase, params)?;
         ensure_real_dir(&notes_dir(root), true)?;
         write_atomic(&meta, HEADER_FILE, created.vault.header().as_bytes())?;
-        let unlocked = Unlocked::new(root.to_path_buf(), created.vault)?;
+        let unlocked = Unlocked::new(root.to_path_buf(), created.vault, lock)?;
         Ok((unlocked, created.recovery_key))
     }
 
@@ -56,6 +59,8 @@ impl Locked {
             }
             other => other?,
         }
+        // Taken before anything is cleaned up: another instance's in-flight files stay intact.
+        let lock = VaultLock::acquire(&root)?;
         let bytes = match read_regular(&header_path(&root), HEADER_LEN as u64) {
             Err(Error::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
                 return Err(Error::NotAVault);
@@ -72,11 +77,11 @@ impl Locked {
             }
             Err(e) => return Err(e),
         }
-        Ok(Self { root, header })
+        Ok(Self { root, header, lock })
     }
 
-    pub(crate) fn from_parts(root: PathBuf, header: VaultHeader) -> Self {
-        Self { root, header }
+    pub(crate) fn from_parts(root: PathBuf, header: VaultHeader, lock: VaultLock) -> Self {
+        Self { root, header, lock }
     }
 
     /// The vault directory.
@@ -97,7 +102,7 @@ impl Locked {
     /// [`nuvoletta_crypto::Error::Unlock`] (wrapped) for a wrong passphrase or corrupted header.
     pub fn unlock_with_passphrase(&self, passphrase: &str) -> Result<Unlocked> {
         let vault = self.header.unlock_with_passphrase(passphrase)?;
-        Unlocked::new(self.root.clone(), vault)
+        Unlocked::new(self.root.clone(), vault, self.lock.clone())
     }
 
     /// Unlock with the recovery key. The caller should then force a new passphrase with
@@ -107,6 +112,6 @@ impl Locked {
     /// As [`Locked::unlock_with_passphrase`].
     pub fn unlock_with_recovery_key(&self, key: &RecoveryKey) -> Result<Unlocked> {
         let vault = self.header.unlock_with_recovery_key(key)?;
-        Unlocked::new(self.root.clone(), vault)
+        Unlocked::new(self.root.clone(), vault, self.lock.clone())
     }
 }

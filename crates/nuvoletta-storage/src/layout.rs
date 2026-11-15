@@ -3,6 +3,7 @@
 //! ```text
 //! <vault>/
 //!   .nuvoletta/vault-header        236-byte vault header
+//!   .nuvoletta/lock                empty file carrying the single-instance lock
 //!   notes/<note_id 32 hex>.nvnote  latest revision of a note, one envelope (type 1)
 //! ```
 //!
@@ -17,6 +18,8 @@ use std::path::{Path, PathBuf};
 pub const META_DIR: &str = ".nuvoletta";
 /// Header file name inside [`META_DIR`].
 pub const HEADER_FILE: &str = "vault-header";
+/// Single-instance lock file inside [`META_DIR`] (see [`crate::lock`]).
+pub const LOCK_FILE: &str = "lock";
 /// Notes directory.
 pub const NOTES_DIR: &str = "notes";
 /// Note file extension.
