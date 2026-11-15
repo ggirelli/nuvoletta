@@ -421,8 +421,8 @@ Exit criteria:
 - Fuzzing and property-based testing. Status: fuzzing done (`fuzz/`, 12 `cargo-fuzz` targets with invariants over the header, envelope, payload, log segment, local state, remote names, WebDAV XML and `href`, Markdown renderer/sanitiser, wikilinks, plaintext import and link classifier; nightly CI job, 10 minutes per target, crash reproducers uploaded). Property tests exist per crate since Phases 1 to 5.
 - Security-focused code review and independent human security audit (milestone before relying on Nuvoletta for sensitive material).
 - Backup, restore, device loss, and recovery-key exercises. **Done** (`crates/nuvoletta-app-core/tests/recovery.rs`; procedures in `docs/user/`). Known gaps found: no in-app join (the vault header is copied by hand from the sync folder's `h/`), no in-app adoption of a newer header after a passphrase change on another device, and a corrupt `journal` stops sync until deleted.
-- Performance and battery testing.
-- Accessibility and usability review.
+- Performance and battery testing. Status: benchmarks (`just bench`) and first fixes done, results and open items in `docs/PERFORMANCE.md`; on-device measurement on Android still to do.
+- Accessibility and usability review. Status: code and palette review done with fixes, results and open items in `docs/ACCESSIBILITY.md`; screen reader testing (Orca, NVDA, VoiceOver, TalkBack) still to do.
 - Reproducible release process and signed application updates.
 - Clear privacy policy and documentation of metadata leakage and security limitations. **Done** (`docs/user/privacy-policy.md`, `docs/user/security-and-privacy.md`; states that the app is not audited).
 
