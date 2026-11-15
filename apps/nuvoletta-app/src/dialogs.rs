@@ -21,7 +21,7 @@ pub fn RecoveryScreen() -> Element {
                 h1 { id: "rk-title", "Write down your recovery key" }
                 p { "If you forget your passphrase, this key is the only way back into your notes. Nobody can recover it for you." }
                 p { class: "warning", "This is the only time it is shown. Write it on paper and keep it somewhere safe, away from this computer." }
-                div { class: "recovery-key", role: "textbox", "aria-readonly": "true", "aria-label": "Recovery key", tabindex: "0",
+                div { class: "recovery-key", role: "group", "aria-label": "Recovery key", tabindex: "0",
                     for (i, group) in key.split('-').enumerate() {
                         span { class: "grp", key: "{i}", "{group}" }
                     }
@@ -102,6 +102,13 @@ pub fn LockBlocked(message: String) -> Element {
     rsx! {
         div { class: "scrim",
             div { class: "dialog", role: "alertdialog", "aria-modal": "true", "aria-labelledby": "lb-title", "aria-describedby": "lb-desc",
+                // Escape is the safe choice: keep working, discard nothing.
+                onkeydown: move |e| {
+                    if e.key() == Key::Escape {
+                        let mut lb = ui.lock_blocked;
+                        lb.set(None);
+                    }
+                },
                 h1 { id: "lb-title", "The vault is still unlocked" }
                 p { id: "lb-desc", class: "error", "{message}" }
                 p { "Your edits could not be saved, so the vault was not locked and nothing was discarded." }
@@ -145,6 +152,12 @@ pub fn ConfirmDelete(id: NoteId) -> Element {
     rsx! {
         div { class: "scrim",
             div { class: "dialog", role: "alertdialog", "aria-modal": "true", "aria-labelledby": "cd-title",
+                onkeydown: move |e| {
+                    if e.key() == Key::Escape {
+                        let mut d = ui.confirm_delete;
+                        d.set(None);
+                    }
+                },
                 h1 { id: "cd-title", "Delete this note?" }
                 p { "“{title}” will be deleted from this vault. This cannot be undone." }
                 div { class: "actions",

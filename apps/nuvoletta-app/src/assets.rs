@@ -8,6 +8,8 @@ use std::sync::LazyLock;
 const CSS: &str = include_str!("../assets/main.css");
 /// Vendored CodeMirror 6 bundle (see `js/README.md`).
 const EDITOR_JS: &str = include_str!("../assets/editor.js");
+/// Dialog focus trap and focus restore, and the document language (`assets/a11y.js`).
+const A11Y_JS: &str = include_str!("../assets/a11y.js");
 const MARK_SVG: &str = include_str!("../assets/01-logo-mark.svg");
 const WORDMARK_LIGHT_SVG: &str = include_str!("../assets/07a-wordmark-light.svg");
 const WORDMARK_DARK_SVG: &str = include_str!("../assets/07b-wordmark-dark.svg");
@@ -16,7 +18,7 @@ const WORDMARK_DARK_SVG: &str = include_str!("../assets/07b-wordmark-dark.svg");
 pub fn head() -> String {
     format!(
         "<meta http-equiv=\"Content-Security-Policy\" content=\"{CONTENT_SECURITY_POLICY}\">\
-         <style>{CSS}</style><script>{EDITOR_JS}</script>"
+         <style>{CSS}</style><script>{EDITOR_JS}</script><script>{A11Y_JS}</script>"
     )
 }
 
@@ -46,7 +48,11 @@ mod tests {
 
     #[test]
     fn embedded_script_and_style_cannot_close_their_element() {
-        for (name, text) in [("editor.js", EDITOR_JS), ("main.css", CSS)] {
+        for (name, text) in [
+            ("editor.js", EDITOR_JS),
+            ("a11y.js", A11Y_JS),
+            ("main.css", CSS),
+        ] {
             let lower = text.to_ascii_lowercase();
             assert!(!lower.contains("</script"), "{name}");
             assert!(!lower.contains("</style"), "{name}");

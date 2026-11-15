@@ -164,7 +164,14 @@ pub fn Root() -> Element {
     let show_list = *ui.list_open.read() || core.read(|a| a.open_info().is_none());
 
     rsx! {
-        a { class: "skip", href: "#cm", "Skip to editor" }
+        a { class: "skip", href: "#cm",
+            onclick: move |e| {
+                // `#cm` is not focusable by itself: move focus into the editor.
+                e.prevent_default();
+                bridge::focus_editor();
+            },
+            "Skip to editor"
+        }
         if let Some(n) = notice {
             div { class: if n.error { "banner" } else { "banner ok" },
                 role: if n.error { "alert" } else { "status" },
