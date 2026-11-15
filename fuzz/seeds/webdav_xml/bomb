@@ -1,0 +1,1 @@
+<!DOCTYPE x [<!ENTITY a "aaaa">]><d:multistatus xmlns:d="DAV:"><d:response><d:href>&a;</d:href></d:response></d:multistatus>

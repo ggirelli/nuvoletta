@@ -36,3 +36,29 @@ To try an existing vault on a debug build, `adb push` its folder to `/data/local
 `adb shell run-as dev.nuvoletta.app sh -c 'mkdir -p files && cp -r /data/local/tmp/vault files/vault'`
 (debug builds only), and delete the copy in `/data/local/tmp` afterwards. There is no emulator or
 device in CI: the CI jobs only prove the APK builds.
+
+## Fuzzing
+
+`fuzz/` holds [`cargo-fuzz`](https://github.com/rust-fuzz/cargo-fuzz) targets for every parser of
+untrusted input: the vault header, object envelopes (raw bytes and sealed-then-tampered), note
+payloads, log segments, local sync state documents, the remote name grammar, the WebDAV PROPFIND XML
+and `href` handling, the Markdown renderer and sanitiser, wikilinks, the plaintext import parser and
+the preview link classifier. Targets assert invariants (for example: no tag, attribute or URL
+outside the allowlist in rendered HTML; a tampered envelope never opens; an `href` never leaves the
+sync root), not only absence of panics.
+
+```sh
+cargo install cargo-fuzz --locked   # once; needs the nightly toolchain
+just fuzz-list                      # the targets
+just fuzz markdown_render 60        # one target for 60 seconds
+just fuzz-all 60                    # every target
+```
+
+The crate is excluded from the workspace. Seeds are in `fuzz/seeds/<target>/` (test vectors and
+hand-written hostile samples; `just fuzz-seeds` regenerates the ones produced by code); the evolving
+corpus and crash reproducers go to `fuzz/corpus/` and `fuzz/artifacts/` (git-ignored). The nightly
+workflow runs each target for ten minutes and uploads reproducers of any crash. To fix one:
+`cargo +nightly fuzz run <target> fuzz/artifacts/<target>/<file>`, add a regression test in the
+crate that owns the bug (and the reproducer to `fuzz/seeds/<target>/`). The crates expose a few
+`#[doc(hidden)]` entry points (`*_for_fuzz`, `fuzz_*`, `portable::fuzzing`) so that targets can reach
+private parsers; they are not API.

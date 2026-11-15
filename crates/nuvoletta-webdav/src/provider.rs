@@ -168,6 +168,13 @@ impl WebDavProvider {
         Some(rest.to_owned())
     }
 
+    /// Fuzzing entry point for the `href` handling; see `rel_of_href`.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn rel_of_href_for_fuzz(&self, href: &str) -> Option<String> {
+        self.rel_of_href(href)
+    }
+
     fn list_dir(
         &self,
         dir: &str,

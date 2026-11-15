@@ -87,3 +87,33 @@ docs:
 [group('docs')]
 docs-build:
     uvx --with-requirements docs/requirements.txt mkdocs build --strict
+
+# Fuzz targets (cargo-fuzz, nightly toolchain)
+fuzz_targets := "vault_header envelope note_payload log_segment state_docs remote_names webdav_xml webdav_href markdown_render wikilinks portable_markdown app_links"
+
+# List the fuzz targets
+[group('fuzz')]
+fuzz-list:
+    @for t in {{fuzz_targets}}; do echo $t; done
+
+# Run one fuzz target for `seconds` (0 = until stopped); crashes land in fuzz/artifacts/<target>
+[group('fuzz')]
+fuzz target seconds="60":
+    mkdir -p fuzz/corpus/{{target}}
+    cargo +nightly fuzz run {{target}} fuzz/corpus/{{target}} fuzz/seeds/{{target}} -- -max_total_time={{seconds}}
+
+# Run every fuzz target for `seconds` each (what the nightly workflow does)
+[group('fuzz')]
+fuzz-all seconds="60":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for t in {{fuzz_targets}}; do
+        echo "== $t"
+        mkdir -p "fuzz/corpus/$t"
+        cargo +nightly fuzz run "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time={{seconds}}
+    done
+
+# Regenerate the code-produced fuzz seeds in fuzz/seeds
+[group('fuzz')]
+fuzz-seeds:
+    cd fuzz && cargo +nightly run --release --bin gen_seeds
