@@ -63,6 +63,14 @@ fn safe_url(raw: &str, schemes: &[&str]) -> Option<String> {
     {
         return None;
     }
+    // `https:foo` and `https:/foo` are not absolute: a browser resolves them against the page's own
+    // origin when that is also https. Web URLs must have an authority.
+    if scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https") {
+        let authority = rest.strip_prefix("//")?;
+        if authority.is_empty() || authority.starts_with(['/', '?', '#']) {
+            return None;
+        }
+    }
     schemes
         .iter()
         .any(|s| scheme.eq_ignore_ascii_case(s))
