@@ -438,3 +438,149 @@ fn no_plaintext_appears_anywhere_in_the_vault_directory() {
         }
     }
 }
+
+// ---- local trash --------------------------------------------------------------------------
+
+mod trash {
+    use super::*;
+    use nuvoletta_storage::Unlocked;
+    use std::path::{Path, PathBuf};
+
+    const DAY: i64 = 24 * 60 * 60 * 1000;
+
+    fn trash_file(root: &Path, id: &nuvoletta_core::NoteId) -> PathBuf {
+        root.join(".nuvoletta/trash")
+            .join(nuvoletta_storage::layout::note_file_name(id))
+    }
+
+    fn live_file(root: &Path, id: &nuvoletta_core::NoteId) -> PathBuf {
+        root.join("notes")
+            .join(nuvoletta_storage::layout::note_file_name(id))
+    }
+
+    fn setup() -> (tempfile::TempDir, Unlocked, nuvoletta_core::Note) {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut v, _) = create(dir.path());
+        let n = note("Gone", "a/b", "secret body");
+        v.create_note(&n).unwrap();
+        (dir, v, n)
+    }
+
+    #[test]
+    fn delete_moves_the_file_unchanged_and_restore_moves_it_back() {
+        let (dir, mut v, n) = setup();
+        let before = fs::read(live_file(dir.path(), &n.id)).unwrap();
+        v.delete_note(&n.id).unwrap();
+        assert!(!live_file(dir.path(), &n.id).exists());
+        assert_eq!(fs::read(trash_file(dir.path(), &n.id)).unwrap(), before);
+        let t = v.list_trash();
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].summary.title, "Gone");
+        assert_eq!(v.restore_from_trash(&n.id).unwrap(), n.id);
+        assert_eq!(fs::read(live_file(dir.path(), &n.id)).unwrap(), before);
+        assert!(v.list_trash().is_empty());
+        assert_eq!(v.read_note(&n.id).unwrap().body, "secret body");
+    }
+
+    #[test]
+    fn trash_survives_relock_and_holds_only_ciphertext() {
+        let (dir, mut v, n) = setup();
+        v.delete_note(&n.id).unwrap();
+        drop(v);
+        for f in all_files(&dir.path().join(".nuvoletta/trash")) {
+            let bytes = fs::read(f).unwrap();
+            assert!(!bytes.windows(6).any(|w| w == b"secret"));
+        }
+        let v = Locked::open(dir.path())
+            .unwrap()
+            .unlock_with_passphrase(PASSPHRASE)
+            .unwrap();
+        assert_eq!(v.list_trash().len(), 1);
+    }
+
+    #[test]
+    fn entries_expire_after_thirty_days_and_not_before() {
+        let (dir, mut v, n) = setup();
+        v.delete_note(&n.id).unwrap();
+        let t = v.list_trash()[0].deleted_ms;
+        v.purge_expired_at(t + 30 * DAY - 1).unwrap();
+        assert_eq!(v.list_trash().len(), 1);
+        v.purge_expired_at(t + 30 * DAY + 1).unwrap();
+        assert!(v.list_trash().is_empty());
+        assert!(!trash_file(dir.path(), &n.id).exists());
+    }
+
+    #[test]
+    fn crash_after_index_write_before_move_keeps_the_note_live() {
+        let (dir, mut v, n) = setup();
+        v.delete_note(&n.id).unwrap();
+        // Simulate: file never moved (undo the move), index entry remains.
+        fs::rename(trash_file(dir.path(), &n.id), live_file(dir.path(), &n.id)).unwrap();
+        drop(v);
+        let mut v = Locked::open(dir.path())
+            .unwrap()
+            .unlock_with_passphrase(PASSPHRASE)
+            .unwrap();
+        assert_eq!(v.read_note(&n.id).unwrap().title, "Gone");
+        assert!(v.list_trash().is_empty());
+        v.purge_expired().unwrap();
+        assert!(live_file(dir.path(), &n.id).exists());
+    }
+
+    #[test]
+    fn note_in_both_places_is_live_and_identical_trash_copy_is_cleaned() {
+        let (dir, mut v, n) = setup();
+        let live = live_file(dir.path(), &n.id);
+        fs::create_dir_all(dir.path().join(".nuvoletta/trash")).unwrap();
+        fs::copy(&live, trash_file(dir.path(), &n.id)).unwrap();
+        assert!(v.list_trash().is_empty());
+        v.purge_expired().unwrap();
+        assert!(!trash_file(dir.path(), &n.id).exists());
+        assert!(live.exists());
+    }
+
+    #[test]
+    fn differing_trash_copy_is_kept_hidden_and_restore_never_overwrites() {
+        let (dir, mut v, n) = setup();
+        v.delete_note(&n.id).unwrap();
+        // Same id created again (e.g. by sync) while the old version sits in the trash.
+        let mut again = n.clone();
+        again.body = "newer".into();
+        v.create_note(&again).unwrap();
+        assert!(v.list_trash().is_empty());
+        v.purge_expired().unwrap();
+        assert!(trash_file(dir.path(), &n.id).exists());
+        // Force it visible by removing the live note's index presence: restore keeps both.
+        let new_id = v.restore_from_trash(&n.id).unwrap();
+        assert_ne!(new_id, n.id);
+        assert_eq!(v.read_note(&n.id).unwrap().body, "newer");
+        let copy = v.read_note(&new_id).unwrap();
+        assert_eq!(copy.body, "secret body");
+        assert!(copy.title.ends_with("(restored)"));
+        assert!(!trash_file(dir.path(), &n.id).exists());
+    }
+
+    #[test]
+    fn missing_or_tampered_index_never_purges_early_and_restore_unknown_fails() {
+        let (dir, mut v, n) = setup();
+        v.delete_note(&n.id).unwrap();
+        fs::write(dir.path().join(".nuvoletta/trash/index"), b"garbage").unwrap();
+        v.purge_expired().unwrap();
+        assert_eq!(v.list_trash().len(), 1);
+        let other = nuvoletta_core::NoteId::generate().unwrap();
+        assert!(matches!(
+            v.restore_from_trash(&other),
+            Err(nuvoletta_storage::Error::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn export_ignores_the_trash() {
+        let (_dir, mut v, n) = setup();
+        v.delete_note(&n.id).unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let report = nuvoletta_storage::portable::export_markdown(&v, out.path()).unwrap();
+        let _ = report;
+        assert!(all_files(out.path()).is_empty());
+    }
+}

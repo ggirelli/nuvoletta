@@ -696,23 +696,60 @@ fn deleted_notes_are_listed_newest_first_and_restore_converges() {
 }
 
 #[test]
-fn restore_without_content_is_refused_and_unsynced_vaults_have_nothing() {
+fn restore_of_unknown_note_is_refused_and_unsynced_vaults_use_the_local_trash() {
     let w = World::new();
     let mut a = w.first("a");
     let id = a.write("Gone", "text");
     a.app.delete_note(id).unwrap();
     // Not a deleted note / not deleted at all.
-    assert!(matches!(
-        a.app.restore_note(NoteId::generate().unwrap()),
-        Err(Error::Sync(_))
-    ));
-    // A vault that never configured sync lists nothing.
+    assert!(a.app.restore_note(NoteId::generate().unwrap()).is_err());
+    // A vault that never configured sync keeps deletions in the local trash.
     let (mut app, _c) = World::app();
     app.create_vault(&w.tmp.path().join("solo"), PW).unwrap();
     let n = app.create_note("").unwrap();
     app.delete_note(n).unwrap();
+    let list = app.recently_deleted().unwrap();
+    assert_eq!(list.len(), 1);
+    assert!(!list[0].synced);
+    assert_eq!(app.restore_note(n).unwrap(), n);
     assert!(app.recently_deleted().unwrap().is_empty());
-    assert!(matches!(app.restore_note(n), Err(Error::SyncNotConfigured)));
+    assert!(app.notes().iter().any(|x| x.id == n));
+    assert!(app.restore_note(n).is_err());
+}
+
+#[test]
+fn local_trash_and_sync_deletions_are_merged_and_deduplicated() {
+    let w = World::new();
+    let mut a = w.first("a");
+    let mut b = w.join("b", &a);
+    let synced = a.write("Synced", "s body");
+    a.sync();
+    b.sync();
+    // Created and deleted before sync ever saw it: local trash only.
+    let local = a.write("Local", "l body");
+    a.app.delete_note(local).unwrap();
+    a.app.delete_note(synced).unwrap();
+    let list = a.app.recently_deleted().unwrap();
+    assert_eq!(list.len(), 2);
+    assert!(list.iter().find(|i| i.note == synced).unwrap().synced);
+    assert!(!list.iter().find(|i| i.note == local).unwrap().synced);
+    // The synced note restores through sync and converges on b; no duplicate remains.
+    a.sync();
+    b.sync();
+    a.app.restore_note(synced).unwrap();
+    a.sync();
+    b.sync();
+    assert_eq!(b.body(synced), "s body");
+    let left = a.app.recently_deleted().unwrap();
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].note, local);
+    // The local one restores by file move and then syncs as a new note.
+    a.app.restore_note(local).unwrap();
+    assert_eq!(a.body(local), "l body");
+    a.sync();
+    b.sync();
+    assert_eq!(b.body(local), "l body");
+    assert!(a.app.recently_deleted().unwrap().is_empty());
 }
 
 #[test]

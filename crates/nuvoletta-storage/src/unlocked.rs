@@ -1,7 +1,7 @@
 //! An unlocked vault: keys in memory, in-memory index, note CRUD and header operations.
 
 use crate::error::{Error, Result};
-use crate::fsutil::{read_regular, sync_dir, write_atomic};
+use crate::fsutil::{read_regular, write_atomic};
 use crate::layout::{
     HEADER_FILE, TMP_PREFIX, header_path, meta_dir, note_file_name, notes_dir, parse_note_file_name,
 };
@@ -81,6 +81,7 @@ impl Unlocked {
             issues: Vec::new(),
         };
         u.rebuild_index()?;
+        let _ = u.purge_expired(); // best effort: retention housekeeping must not block unlock
         Ok(u)
     }
 
@@ -215,7 +216,19 @@ impl Unlocked {
 
     fn load(&self, id: &NoteId) -> Result<(Note, [u8; 16])> {
         let bytes = read_regular(&self.note_path(id), MAX_NOTE_FILE)?;
-        let opened = open(self.vault.keys(), &bytes)?;
+        self.decode_note(id, &bytes)
+    }
+
+    /// Re-read one note file into the index (after a file was moved into `notes/`).
+    pub(crate) fn reindex(&mut self, id: &NoteId) -> Result<()> {
+        let (note, rev) = self.load(id)?;
+        self.index.insert(*id, summary_of(&note, rev));
+        Ok(())
+    }
+
+    /// Authenticate and decode a note envelope that must belong to `id`.
+    pub(crate) fn decode_note(&self, id: &NoteId, bytes: &[u8]) -> Result<(Note, [u8; 16])> {
+        let opened = open(self.vault.keys(), bytes)?;
         if opened.meta.obj_type != ObjType::NoteRevision || &opened.meta.scope_id != id.as_bytes() {
             return Err(Error::IdMismatch);
         }
@@ -290,7 +303,8 @@ impl Unlocked {
         self.store(note)
     }
 
-    /// Delete a note file. (Tombstone log entries arrive with sync, Phase 4.)
+    /// Delete a note: its file moves, unchanged, to the local trash (see [`crate::trash`]) and
+    /// stays restorable for 30 days.
     ///
     /// # Errors
     /// [`Error::NotFound`] if the id is not indexed.
@@ -298,8 +312,7 @@ impl Unlocked {
         if !self.index.contains_key(id) {
             return Err(Error::NotFound(*id));
         }
-        fs::remove_file(self.note_path(id))?;
-        sync_dir(&notes_dir(&self.root))?;
+        self.move_to_trash(id)?;
         self.index.remove(id);
         Ok(())
     }
@@ -346,7 +359,7 @@ impl Unlocked {
     }
 }
 
-fn summary_of(note: &Note, revision_id: [u8; 16]) -> NoteSummary {
+pub(crate) fn summary_of(note: &Note, revision_id: [u8; 16]) -> NoteSummary {
     NoteSummary {
         id: note.id,
         title: note.title.clone(),

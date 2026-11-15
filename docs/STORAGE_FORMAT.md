@@ -22,6 +22,7 @@ operated on. Sync state (`SYNC_PROTOCOL.md`, Phase 4) is described in section 4.
     sync-state/             written by nuvoletta-sync (section 4): device-id (plain hex), journal,
                             peers, notes, inventory, pending, max-header-gen (envelope type 4);
                             revs/ caches verbatim type 1 revisions (SYNC_PROTOCOL section 6.1)
+    trash/                  local trash (section 3.1): deleted note envelopes and a sealed index
     cache/                  reserved: rebuildable caches (envelope type 4)
   notes/
     <note_id 32 lower-case hex>.nvnote    latest revision of the note: one envelope (type 1)
@@ -63,6 +64,29 @@ opened for sync on Windows). A crash leaves either the old file or the new one, 
   `<id> (1).nvnote`) is stray and ignored, so a duplicate id can never shadow the real note.
 - Stray, symlinked and corrupt files are reported by `Unlocked::issues()`; they are never read
   as truth and never deleted. A corrupt note does not prevent unlocking.
+
+### 3.1 Local trash
+
+Deleting a note moves its envelope file, byte for byte (still encrypted), from `notes/` to
+`.nuvoletta/trash/<note_id>.nvnote` (same name grammar). `.nuvoletta/trash/index` is one sealed
+type 4 object (scope id all zero) holding `"trash1"` followed by 24-byte records (16-byte note id,
+big-endian i64 deletion time in ms). This is a local-only layout addition: no envelope change,
+never synced, never exported (export and import read the in-memory index of `notes/` only), and
+the sync scan only reads `notes/`, so a delete that moves is seen as a delete.
+
+- **Order and crash safety.** Delete writes the index first, then renames the file. A crash leaves
+  the note in `notes/` (an index entry without a file is pruned) or in `trash/`, never in neither.
+  Restore renames the file back, then rewrites the index; a stale entry is pruned.
+- **Both places.** A note present in both is live. The trash copy is deleted only if its bytes are
+  identical; otherwise it stays (hidden from the list) until it expires.
+- **Retention.** At unlock (and when the app lists the trash) entries older than 30 days (the sync
+  GC grace period) are deleted. A missing, tampered or unreadable index never shortens retention:
+  files without a time are stamped with the current time. There is no API to empty the trash or
+  delete one entry; the only removal paths are expiry and restore.
+- **Restore** (`Unlocked::restore_from_trash`) moves the file back if the id is free. If a live
+  note has the id, the trashed version is stored as a new note (new id, title suffixed
+  " (restored)"); nothing is overwritten. Notes that sync tracks must not use this path: the app
+  restores them through the sync engine (PUT with the tombstone as parent).
 
 ## 4. Sync state (Phase 4)
 

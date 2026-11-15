@@ -32,6 +32,13 @@ pub struct DeletedNote {
 }
 
 impl<P: Provider> Syncer<P> {
+    /// Sync has seen this note (it has a history in the log), so a deletion must be undone
+    /// through [`Syncer::restore_note`], never by putting a file back.
+    #[must_use]
+    pub fn tracks(&self, note: &NoteId) -> bool {
+        self.state.notes.contains_key(&Id16(*note.as_bytes()))
+    }
+
     /// Deleted notes, newest deletion first. Notes in conflict or needing attention are not
     /// listed (they are handled as conflicts).
     #[must_use]

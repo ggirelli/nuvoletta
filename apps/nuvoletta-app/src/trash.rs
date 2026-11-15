@@ -1,5 +1,6 @@
-//! "Recently deleted": deleted notes of a synced vault, each with a Restore button. There is no
-//! purge action; how long deleted content stays is governed by the sync cleanup rules.
+//! "Recently deleted": deleted notes, each with a Restore button. There is no purge action:
+//! notes that never synced are kept 30 days in a local trash, synced ones follow the sync cleanup
+//! rules.
 
 use crate::core::Core;
 use crate::sync::ago;
@@ -38,7 +39,7 @@ pub fn TrashDialog() -> Element {
                     }
                 },
                 h1 { id: "trash-title", "Recently deleted" }
-                p { class: "hint", "Restoring brings a note back on all your devices. Deleted notes are kept according to the sync cleanup rules and cannot be emptied from here. Only vaults with sync set up keep deleted notes." }
+                p { class: "hint", "Deleted notes are kept for 30 days on this device and then removed for good; they cannot be emptied or removed from here. With sync set up, restoring brings a note back on all your devices, and synced notes follow the sync cleanup rules. A restored note whose id is already in use comes back as a separate copy." }
                 match list {
                     Err(e) => rsx! { p { class: "error", role: "alert", "{e}" } },
                     Ok(list) if list.is_empty() => rsx! { p { class: "hint", role: "status", "No deleted notes." } },
@@ -65,7 +66,7 @@ pub fn TrashDialog() -> Element {
                                             let note = d.note;
                                             move |_| {
                                                 match core.act(|a| a.restore_note(note)) {
-                                                    Ok(()) => ui.info("Note restored. It syncs to your other devices."),
+                                                    Ok(_) => ui.info("Note restored."),
                                                     Err(e) => ui.error(e.user_message()),
                                                 }
                                                 items.set(load(&core));
