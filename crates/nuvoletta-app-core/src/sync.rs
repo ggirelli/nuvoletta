@@ -23,17 +23,17 @@ use crate::sync_messages::{
 };
 use crate::sync_settings::{SyncSettings, check_sync_folder, device_state_dir, write_device_file};
 use crate::sync_types::{
-    AttentionItem, AttentionReason, ConflictAction, ConflictItem, ConflictKind, HeadDetail,
-    HeadView, InvalidInfo, ResolveOutcome, StrayInfo, SyncEvent, SyncFinished, SyncNotice,
-    SyncProblem, SyncState, SyncStatus,
+    AttentionItem, AttentionReason, CleanupSummary, ConflictAction, ConflictItem, ConflictKind,
+    HeadDetail, HeadView, InvalidInfo, ResolveOutcome, StrayInfo, SyncEvent, SyncFinished,
+    SyncNotice, SyncProblem, SyncState, SyncStatus,
 };
 use nuvoletta_core::{NoteId, now_ms};
 use nuvoletta_storage::{NoteSummary, Unlocked};
 use nuvoletta_sync::ids::Id16;
 use nuvoletta_sync::state::STATE_DIR;
 use nuvoletta_sync::{
-    Capabilities, FolderProvider, NoteStatus, Provider, ProviderError, RemoteEntry, SyncReport,
-    Syncer,
+    Capabilities, FolderProvider, GcOptions, GcReport, GcSkip, NoteStatus, Provider, ProviderError,
+    RemoteEntry, SyncReport, Syncer,
 };
 use std::collections::{HashMap, HashSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -902,5 +902,64 @@ impl App {
         s.reconcile_with_vault(&before);
         result.map_err(map)?;
         Ok(ResolveOutcome { new_note })
+    }
+}
+
+fn summarize(r: &GcReport) -> CleanupSummary {
+    let unavailable = r.skipped.map(|s| match s {
+        GcSkip::Forks => "A device ID was used twice (see the integrity warnings). Nothing is deleted until that is sorted out.".to_owned(),
+        GcSkip::Rebuilding => "This device is still rebuilding its sync knowledge. Sync again, then retry.".to_owned(),
+    });
+    CleanupSummary {
+        dry_run: r.dry_run,
+        unavailable,
+        old_versions: r.objects_collected,
+        old_version_bytes: r.bytes_collected,
+        leftovers: r.orphans_collected,
+        leftover_bytes: r.orphan_bytes,
+        kept: r.kept.total(),
+        cache_entries: r.revs_pruned,
+    }
+}
+
+impl App {
+    /// What "Clean up old versions" would delete from the sync folder, without deleting
+    /// anything. Only versions this device wrote can ever be deleted, and only old ones that
+    /// every active device has seen (`SYNC_PROTOCOL.md` section 9). Works from what the last
+    /// sync cycle learned; sync first for the freshest picture.
+    ///
+    /// # Errors
+    /// [`Error::SyncBusy`] during a cycle, [`Error::SyncNotConfigured`] without an available
+    /// sync folder, [`Error::Sync`] if the folder cannot be read.
+    pub fn cleanup_preview(&mut self) -> Result<CleanupSummary> {
+        self.cleanup(true)
+    }
+
+    /// Delete old versions from the sync folder (after the user confirmed a preview). Nothing
+    /// that is needed to merge, resolve conflicts or restore the newest versions is deleted.
+    ///
+    /// # Errors
+    /// As [`App::cleanup_preview`]; a folder failure stops the cleanup, and repeating it
+    /// continues safely.
+    pub fn cleanup_run(&mut self) -> Result<CleanupSummary> {
+        self.cleanup(false)
+    }
+
+    fn cleanup(&mut self, dry_run: bool) -> Result<CleanupSummary> {
+        if !self.sync_cfg.active() || !self.sync_cfg.folder.as_deref().is_some_and(Path::is_dir) {
+            return Err(Error::SyncNotConfigured);
+        }
+        let s = self.session_mut()?;
+        let (Some(vault), Some(syncer)) = (s.vault.as_ref(), s.sync.syncer.as_deref_mut()) else {
+            return Err(Error::SyncBusy);
+        };
+        let opts = GcOptions {
+            dry_run,
+            ..GcOptions::default()
+        };
+        syncer
+            .collect_garbage(vault, &opts)
+            .map(|r| summarize(&r))
+            .map_err(|e| Error::Sync(describe_error(&e).message))
     }
 }

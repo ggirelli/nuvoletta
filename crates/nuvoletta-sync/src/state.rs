@@ -203,7 +203,32 @@ pub struct Retry {
     pub since: i64,
 }
 
-/// Things waiting for propagation (section 6.3 steps 4 and 5).
+/// A verified log segment that arrived after a gap and waits for the missing segments
+/// (section 6.3 step 4). Only the bytes as stored remotely (already AEAD-protected with K_log)
+/// are kept, inside the K_local-sealed `pending` file; applying it re-verifies everything.
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
+#[cbor(map)]
+pub struct Buffered {
+    /// Device that wrote it.
+    #[n(0)]
+    pub device: DeviceId,
+    /// Listed size when it was fetched (with `etag`, tells whether the remote file changed).
+    #[n(1)]
+    pub size: u64,
+    /// Listed etag or modification stamp when it was fetched.
+    #[n(2)]
+    #[cbor(skip_if = "Option::is_none")]
+    pub etag: Option<String>,
+    /// The envelope bytes.
+    #[n(3)]
+    #[cbor(with = "minicbor::bytes")]
+    pub bytes: Vec<u8>,
+}
+
+/// Things waiting for propagation (section 6.3 steps 4 and 5), plus own orphan objects.
+///
+/// Local and rebuildable: a lost or unreadable `pending` only costs retry counters, a refetch of
+/// buffered segments, and the chance to garbage collect old orphan objects.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Encode, Decode)]
 #[cbor(map)]
 pub struct Pending {
@@ -216,6 +241,16 @@ pub struct Pending {
     /// Entries claimed by a checkpoint that this device cannot see: possibly withheld.
     #[n(2)]
     pub withheld: BTreeMap<DeviceId, (u64, Retry)>,
+    /// Segments buffered after a gap, by remote name.
+    #[n(3)]
+    #[cbor(default)]
+    pub buffered: BTreeMap<String, Buffered>,
+    /// Own objects uploaded but dropped from the journal before any entry referenced them (an
+    /// intermediate local revision, section 6.2), with the time that happened: orphans that
+    /// section 9 rule 5 lets this device delete after a week.
+    #[n(4)]
+    #[cbor(default)]
+    pub orphans: BTreeMap<RevId, i64>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -462,6 +497,15 @@ impl State {
             }
             Err(e) => Err(e.into()),
         }
+    }
+
+    /// Size in bytes of a cached revision, if present.
+    #[must_use]
+    pub fn rev_size(&self, rev: &RevId) -> Option<u64> {
+        fs::symlink_metadata(self.rev_path(rev))
+            .ok()
+            .filter(fs::Metadata::is_file)
+            .map(|m| m.len())
     }
 
     /// Whether a revision is cached.

@@ -156,6 +156,13 @@ impl<P: Provider> Syncer<P> {
         // Never uploaded as part of any entry: an intermediate local revision (section 6.2).
         // Its object file may already be on the remote (unreferenced orphan, section 9 rule 5).
         self.state.remove_rev(&old.rev)?;
+        if old.kind == KIND_PUT {
+            // Its object may be on the remote even if the upload was not yet recorded: remember
+            // it, garbage collection may delete it after the orphan grace period (and forgets
+            // the record if the remote has no such file).
+            self.state.pending.orphans.insert(old.rev, now_ms());
+            self.state.touch_pending();
+        }
         Ok(Some(old))
     }
 

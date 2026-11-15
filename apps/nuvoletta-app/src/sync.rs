@@ -9,8 +9,8 @@ use crate::picker::PathField;
 use crate::ui::Ui;
 use dioxus::prelude::*;
 use nuvoletta_app_core::{
-    App, AttentionReason, ConflictAction, ConflictItem, ConflictKind, DiffKind, HeadView,
-    SyncEvent, SyncState, SyncStatus,
+    App, AttentionReason, CleanupSummary, ConflictAction, ConflictItem, ConflictKind, DiffKind,
+    HeadView, SyncEvent, SyncState, SyncStatus,
 };
 use nuvoletta_core::{NoteId, now_ms};
 use std::path::PathBuf;
@@ -114,6 +114,86 @@ pub fn SyncControls() -> Element {
                 }
             },
             "Sync now"
+        }
+    }
+}
+
+fn bytes_text(b: u64) -> String {
+    match b {
+        0..=1023 => format!("{b} bytes"),
+        1024..=1_048_575 => format!("{:.1} KiB", b as f64 / 1024.0),
+        _ => format!("{:.1} MiB", b as f64 / 1_048_576.0),
+    }
+}
+
+/// "Clean up old versions": preview, explicit confirmation, result. All decisions are made by
+/// the core; this only shows the counts and asks.
+#[component]
+fn CleanupSection(disabled: bool) -> Element {
+    let core = use_context::<Core>();
+    let ui = use_context::<Ui>();
+    let mut preview = use_signal(|| None::<CleanupSummary>);
+    let mut result = use_signal(|| None::<CleanupSummary>);
+    let mut confirmed = use_signal(|| false);
+    let (c_prev, c_run) = (core.clone(), core.clone());
+    rsx! {
+        section { "aria-labelledby": "sync-clean",
+            h2 { id: "sync-clean", "Clean up old versions" }
+            p { class: "hint", "Frees space in the sync folder by deleting old versions of notes that this device wrote, once every device has seen the newer ones and at least 30 days have passed. The newest versions, the versions behind them and anything in conflict are always kept. Deleted versions cannot be brought back." }
+            div { class: "actions",
+                button {
+                    disabled,
+                    onclick: move |_| {
+                        result.set(None);
+                        confirmed.set(false);
+                        match c_prev.act(App::cleanup_preview) {
+                            Ok(p) => preview.set(Some(p)),
+                            Err(e) => {
+                                preview.set(None);
+                                ui.error(e.user_message());
+                            }
+                        }
+                    },
+                    "Preview clean-up"
+                }
+            }
+            if let Some(p) = preview() {
+                if let Some(why) = p.unavailable.clone() {
+                    p { class: "hint", role: "status", "{why}" }
+                } else if p.old_versions + p.leftovers == 0 {
+                    p { class: "hint", role: "status", "Nothing to clean up right now. {plural(p.kept, \"version is\", \"versions are\")} kept." }
+                } else {
+                    div { role: "status",
+                        p { "Would delete {plural(p.old_versions, \"old version\", \"old versions\")} ({bytes_text(p.old_version_bytes)}) and {plural(p.leftovers, \"leftover file\", \"leftover files\")} ({bytes_text(p.leftover_bytes)}) from the sync folder, and {plural(p.cache_entries, \"old copy\", \"old copies\")} from this device's cache. {plural(p.kept, \"version is\", \"versions are\")} kept." }
+                        label { class: "check",
+                            input { r#type: "checkbox", checked: confirmed(), onchange: move |e| confirmed.set(e.checked()) }
+                            span { "I understand that deleted versions cannot be brought back." }
+                        }
+                        div { class: "actions",
+                            button {
+                                class: "danger",
+                                disabled: disabled || !confirmed(),
+                                onclick: move |_| {
+                                    match c_run.act(App::cleanup_run) {
+                                        Ok(r) => {
+                                            preview.set(None);
+                                            confirmed.set(false);
+                                            result.set(Some(r));
+                                        }
+                                        Err(e) => ui.error(e.user_message()),
+                                    }
+                                },
+                                "Delete old versions"
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(r) = result() {
+                p { role: "status",
+                    "Deleted {plural(r.old_versions, \"old version\", \"old versions\")} ({bytes_text(r.old_version_bytes)}) and {plural(r.leftovers, \"leftover file\", \"leftover files\")} ({bytes_text(r.leftover_bytes)}); removed {plural(r.cache_entries, \"old copy\", \"old copies\")} from this device's cache. {plural(r.kept, \"version is\", \"versions are\")} kept."
+                }
+            }
         }
     }
 }
@@ -331,6 +411,8 @@ fn SyncMain() -> Element {
                         }
                     }
                 }
+
+                CleanupSection { disabled: busy }
 
                 section { "aria-labelledby": "sync-diag",
                     h2 { id: "sync-diag", "Diagnostics" }

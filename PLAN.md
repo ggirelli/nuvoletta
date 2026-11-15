@@ -349,7 +349,7 @@ Decisions made in Phase 4 (details in `docs/ADR/0005-sync-protocol.md` and the i
 - Local edits are found by scanning the vault (no storage hooks); storage only gained small accessors (`keys`, `header`, `read_revision_bytes`, `install_revision`) and public atomic-write helpers. No on-disk format changed.
 - Designated device for merging identical-content heads, fork handling refinements (unpublished divergence versus visible fork) and the other points the protocol text left open are listed in the SYNC_PROTOCOL.md implementation notes.
 - Tests: in-process vault instances over a fault-injecting folder (drops, delays, truncation, duplicates, conflicted copies, rollback, outages), scenarios S1 to S5, crash at every cycle step and every provider operation, hostile-file tests and proptest convergence (the long four-device run is `#[ignore]`, `just test-slow`).
-- Deferred: garbage collection and cache pruning (manual, stubbed), snapshots, hourly cap of standalone checkpoints.
+- Deferred: snapshots, hourly cap of standalone checkpoints. Garbage collection, cache pruning and gap buffering: **done** (see "Decisions made in the Phase 4 sync follow-ups" below).
 - Follow-up (out of scope for this phase): app integration (sync settings, sync status, conflict list and resolution UI, "needs attention" and diagnostics screens, scheduling and the folder-picker flow). **Done** (see "Decisions made in the Phase 4 app integration" below).
 
 Decisions made in the Phase 4 app integration (details in `docs/APP.md`):
@@ -358,7 +358,13 @@ Decisions made in the Phase 4 app integration (details in `docs/APP.md`):
 - Scheduling (clock-based, tested with a manual clock): first cycle after unlock, 5 s after a save, every 5 minutes, never while locked or while the note has unsaved typing; an error is retried on the schedule, "Sync now" always works.
 - Settings live in `.nuvoletta/device-state/sync.json` (device-local, unencrypted, no secrets) next to `sync-notices.json` (unacknowledged integrity warnings, which only an explicit user action removes). The sync folder must exist (an unmounted drive is reported, never recreated: the folder backend treats a missing directory as empty) and be separate from the vault.
 - Conflicts: list, per-head view with a line diff against the local version, choose head, keep both (exactly two edited heads), keep/delete for delete-versus-edit. Merging by hand is "use this version and edit": the sync API has no "resolve with custom content" action.
-- Deferred: garbage collection UI ("clean up old versions"), resolving with hand-merged content in one step, keep-both for three or more heads, adopting a newer vault header (re-unlock flow), a keyboard shortcut for sync, cancelling a running cycle, status display of sync progress counts, switching sync folders without a rollback warning.
+- Deferred: resolving with hand-merged content in one step, keep-both for three or more heads, adopting a newer vault header (re-unlock flow), a keyboard shortcut for sync, cancelling a running cycle, status display of sync progress counts, switching sync folders without a rollback warning.
+
+Decisions made in the Phase 4 sync follow-ups (details in the SYNC_PROTOCOL.md implementation notes 8, 16 and 17):
+- Manual garbage collection (`Syncer::collect_garbage`, dry run, injected clock; 90-day ack window, 30-day grace, K = 5, 7-day orphans): deletes only content objects this device wrote, never log segments (snapshots are post-MVP), never anything of a note in conflict, never anything while a fork is recorded or the state is rebuilding; keeps heads, head parents and the last K; unknown or silent devices block deletion. "Clean up old versions" in the Sync dialog: preview, explicit confirmation, result; logic in app-core.
+- The local `revs/` cache is pruned after every sync cycle (base, heads, head parents, last K, all of a conflict).
+- Segments after a gap are buffered in the encrypted `pending` state (bounded) and no longer refetched. Local, rebuildable state only; no on-disk or on-wire format changed.
+- Deferred: purging the last versions of deleted notes, snapshots and own-segment compaction.
 
 Exit criteria:
 - Two independent local vault instances can synchronize through a folder, including offline edits, conflicting edits, and simulated delayed/partial propagation, without data loss.

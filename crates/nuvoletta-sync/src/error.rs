@@ -32,9 +32,6 @@ pub enum Error {
     /// A required revision object is not available locally (not yet fetched).
     #[error("revision content is not available locally")]
     RevisionUnavailable,
-    /// The operation is intentionally not implemented yet.
-    #[error("not implemented: {0}")]
-    NotImplemented(&'static str),
     /// A test-only crash point fired (see [`crate::CrashPoint`]).
     #[error("simulated crash at {0:?}")]
     Crash(crate::CrashPoint),

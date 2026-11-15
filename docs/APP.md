@@ -78,6 +78,17 @@ devices. Only encrypted files are written there. The protocol is in
 8. **Diagnostics.** The *Sync* dialog lists files in the sync folder that are not Nuvoletta files
    (including copies made by your sync tool) and invalid entries. This is report only: nothing is
    deleted or modified.
+9. **Clean up old versions.** The *Sync* dialog has a *Clean up old versions* section. *Preview
+   clean-up* shows what would be deleted from the sync folder (counts and sizes) without deleting
+   anything; *Delete old versions* needs an explicit tick of "I understand that deleted versions
+   cannot be brought back". Afterwards the result is shown. Only versions this device wrote can be
+   deleted, only old ones that every device active in the last 90 days has seen, at least 30 days
+   after the newer version was written; the newest 5 versions of every note, the current versions and
+   what they were based on, and everything in a conflict are always kept (details in
+   [SYNC_PROTOCOL.md](SYNC_PROTOCOL.md) section 9). Log files are never deleted. It is manual, works
+   from what the last sync learned, and is unavailable while a sync cycle runs, while the vault is
+   locked, without a sync folder, and while a device ID is reported as used twice. A clean-up that is
+   interrupted is safe to repeat.
 
 ## Keyboard
 
@@ -140,6 +151,5 @@ folder of `.md` files and never overwrites an existing note. See the
 - **Sync and the webview.** Sync adds no network access to the page: the worker thread only reads
   and writes the chosen local folder, and the Content-Security-Policy is unchanged. The conflict view
   shows note text, so it has the same plaintext-in-the-webview limit as the editor.
-- **Not available yet:** garbage collection of old versions (the sync folder and the local cache grow),
-  editing a merge directly inside the conflict view (use *Use version N and edit*), a keyboard
+- **Not available yet:** removing deleted notes' last versions from the sync folder, editing a merge directly inside the conflict view (use *Use version N and edit*), a keyboard
   shortcut for *Sync now* (use the *Sync now* button), WebDAV and other providers.
