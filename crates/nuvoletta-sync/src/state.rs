@@ -179,6 +179,12 @@ pub struct NoteRec {
     #[n(4)]
     #[cbor(skip_if = "Option::is_none")]
     pub applying: Option<RevId>,
+    /// The next local edit of this note was made on top of this older revision (the user kept
+    /// typing while a sync replaced the note): queue it as a sibling of `local_rev`, with this
+    /// revision as its parent, so the two versions show as a conflict.
+    #[n(5)]
+    #[cbor(skip_if = "Option::is_none")]
+    pub edit_base: Option<RevId>,
 }
 
 /// An entry of the last remote listing.

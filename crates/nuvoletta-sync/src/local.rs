@@ -100,6 +100,7 @@ impl<P: Provider> Syncer<P> {
                 let rec = self.state.notes.get_mut(&note).expect("checked above");
                 rec.local_rev = Some(rev);
                 rec.base = Some(rev);
+                rec.edit_base = None;
                 if rec.applying == Some(rev) {
                     rec.applying = None;
                 }
@@ -133,6 +134,42 @@ impl<P: Provider> Syncer<P> {
             self.state.touch_notes();
         }
         Ok(created)
+    }
+
+    fn has_vertex(&self, note: &Id16, rev: &RevId) -> bool {
+        self.state
+            .notes
+            .get(note)
+            .is_some_and(|r| r.graph.vertices.contains_key(rev))
+    }
+
+    /// Tell the engine that the next local save of `note` was typed on top of revision `base`,
+    /// which a sync has since replaced in the vault. Call after the save; the new revision is
+    /// then queued as a sibling of the synced one and shows as a conflict. Unknown or current
+    /// revisions are ignored.
+    ///
+    /// # Errors
+    /// Failure to persist the hint.
+    pub fn note_edited_on(
+        &mut self,
+        vault: &Unlocked,
+        note: &NoteId,
+        base: [u8; 16],
+    ) -> Result<()> {
+        let nid = Id16(*note.as_bytes());
+        let base = Id16(base);
+        if !self.has_vertex(&nid, &base) {
+            return Ok(());
+        }
+        let Some(rec) = self.state.notes.get_mut(&nid) else {
+            return Ok(());
+        };
+        if rec.local_rev == Some(base) {
+            return Ok(());
+        }
+        rec.edit_base = Some(base);
+        self.state.touch_notes();
+        self.state.save(vault.keys())
     }
 
     /// Position and remove an unsealed own intent of `note`, with its vertex and cached object.
@@ -174,9 +211,18 @@ impl<P: Provider> Syncer<P> {
         let hash = Hash32::of(&bytes);
         self.state.put_rev(&rev, &bytes)?;
         let local = self.state.notes.get(&nid).and_then(|r| r.local_rev);
+        // An edit made on top of an older revision than the one the vault now holds (the user
+        // kept typing while a sync replaced the note) is a sibling of the newer revision, never
+        // its silent successor (PLAN 6.1: no silent last-write-wins).
+        let edit_base = self
+            .state
+            .notes
+            .get_mut(&nid)
+            .and_then(|r| r.edit_base.take())
+            .filter(|b| Some(*b) != local && self.has_vertex(&nid, b));
         let parents = match self.take_unsealed_intent(&nid)? {
             Some(old) => old.parents,
-            None => local.into_iter().collect(),
+            None => edit_base.map_or_else(|| local.into_iter().collect(), |b| vec![b]),
         };
         self.add_intent(nid, KIND_PUT, rev, Some(hash), parents);
         Ok(())

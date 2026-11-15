@@ -131,7 +131,7 @@ struct JobResult {
 /// Sync state of an unlocked session.
 #[derive(Default)]
 pub(crate) struct SyncSession {
-    syncer: Option<Box<BoxSyncer>>,
+    pub(crate) syncer: Option<Box<BoxSyncer>>,
     job: Option<Receiver<JobResult>>,
     /// A lock was requested during a cycle; the flag is `force`.
     pub(crate) lock_after: Option<bool>,
@@ -403,11 +403,15 @@ impl Session {
             && let Ok(new) = vault.read_note(&id)
         {
             if o.dirty() {
+                // The edits were typed on the revision the vault held before this cycle.
+                if o.sync_base.is_none() {
+                    o.sync_base = old.get(&id).copied();
+                }
                 o.note = new;
                 o.changed_by_sync = true;
                 return (
                     false,
-                    Some("This note was updated by sync while you were editing it. Your edits are still in the editor; saving replaces the synced version (which stays in sync history).".to_owned()),
+                    Some("This note was updated by sync while you were editing it. Your edits are still in the editor; saving keeps both versions and shows the note under conflicts.".to_owned()),
                 );
             }
             o.buffer = zeroize::Zeroizing::new(new.body.clone());

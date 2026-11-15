@@ -531,9 +531,53 @@ fn typing_during_a_cycle_that_updates_the_open_note_is_kept_and_flagged() {
     assert_eq!(b.app.buffer(), Some("typed meanwhile"));
     let info = b.app.open_info().unwrap();
     assert!(info.changed_by_sync && info.dirty);
-    // Saving is an explicit act and clears the flag; the other text stays in sync history.
+    // Saving clears the flag; the remote text is not replaced but kept as a conflict.
     b.app.save_now().unwrap();
     assert!(!b.app.open_info().unwrap().changed_by_sync);
+}
+
+/// M3 (security review): the autosave of text typed during a cycle that replaced the open note
+/// must not silently supersede the remote edit; both versions stay, shown as a conflict.
+#[test]
+fn autosave_after_sync_over_unsaved_edits_becomes_a_conflict_not_last_write_wins() {
+    let w = World::new();
+    let mut a = w.first("a");
+    let mut b = w.join("b", &a);
+    // Only explicit cycles.
+    b.app.set_sync_timing(SyncTiming {
+        debounce: Duration::from_secs(100_000),
+        interval: Duration::from_secs(100_000),
+    });
+    let id = a.write("N", "v1");
+    a.sync();
+    b.sync();
+    b.app.open_note(id).unwrap();
+    a.set_body(id, "REMOTE EDIT on a");
+    a.sync();
+    b.app.sync_now().unwrap();
+    b.app.edit(id, "v1 plus local typing").unwrap();
+    assert!(finished_ok(b.app.wait_sync()));
+    b.clock.advance(2 * SEC);
+    assert_eq!(b.app.tick(), TickOutcome::Saved);
+    assert!(finished_ok(b.sync()));
+    assert!(finished_ok(a.sync()));
+    // Neither text is lost and the conflict is visible on both devices.
+    assert_eq!(a.app.sync_conflicts().len(), 1);
+    assert_eq!(b.app.sync_conflicts().len(), 1);
+    let c = a.app.sync_conflicts().remove(0);
+    let texts: Vec<String> = c
+        .heads
+        .iter()
+        .map(|h| {
+            a.app
+                .conflict_head(id, &h.rev)
+                .unwrap()
+                .body
+                .unwrap_or_default()
+        })
+        .collect();
+    assert!(texts.iter().any(|t| t == "REMOTE EDIT on a"), "{texts:?}");
+    assert!(texts.iter().any(|t| t == "v1 plus local typing"), "{texts:?}");
 }
 
 #[test]
