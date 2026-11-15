@@ -58,9 +58,9 @@ The MVP consists of four capabilities:
 - Detect concurrent edits and preserve both versions; never silently discard user content.
 - Handle retries, interrupted uploads/downloads, provider throttling, and partial failures.
 - Provide clear sync status and actionable error messages.
-- Keep provider credentials in the platform credential store where available, not in the vault or plaintext config.
+- Keep provider credentials out of the vault's synced data and out of plaintext config. **Decided (2026-11, ADR 0007):** WebDAV credentials are stored only in this device's local state (`.nuvoletta/device-state/webdav`), sealed as envelope type 4 with `K_local`, never synced, available only while the vault is unlocked. This is stronger than the Linux and Windows keyrings while the vault is locked (any process of the user can read a keyring), the same on every platform and needs no JNI on Android. Limit: the vault passphrase plus the device files reveal the credential. Mitigation: use a dedicated account or app password that can only read and create (and is therefore also refused if it can delete or overwrite, below), and rotate it with the passphrase.
 
-**Provider targets:** the first real backend is an **externally synced folder**: a local folder that the user syncs with Syncthing, Dropbox, iCloud, a Nextcloud client, or similar. Nuvoletta only reads and writes files there. It is the **only** backend in the MVP: WebDAV is deferred to v1 or v2 (owner decision, 2026-11-15; see Phase 5), and Google Drive and Dropbox (API) backends are post-MVP too. Keep the provider interface generic so other backends can be added later. A plain local-folder backend remains useful for tests.
+**Provider targets:** the first real backend is an **externally synced folder**: a local folder that the user syncs with Syncthing, Dropbox, iCloud, a Nextcloud client, or similar. Nuvoletta only reads and writes files there. The second backend is **WebDAV** (Phase 5; it was deferred out of the MVP and was brought back because it is the route to Android sync), used only with an account that can read and create but not delete or overwrite. Google Drive and Dropbox (API) backends are post-MVP. Keep the provider interface generic so other backends can be added later. A plain local-folder backend remains useful for tests.
 
 The sync protocol must tolerate a dumb file-sync layer: no atomicity across files, delayed or partial propagation, files appearing out of order, and sync-tool conflict copies (which must be recognized and handled, not treated as corruption). More generally, do not assume that providers offer identical atomicity, revision history, conditional writes, or reliable change feeds. The sync engine must work correctly even when it has to list and compare remote objects.
 
@@ -81,7 +81,7 @@ The sync protocol must tolerate a dumb file-sync layer: no atomicity across file
 - Complex graph visualization.
 - Attachments and rich media (post-MVP).
 - Device revocation and DEK rotation.
-- WebDAV backend (deferred to v1 or v2; see Phase 5).
+- WebDAV backend: implemented (Phase 5).
 - Google Drive and Dropbox API backends.
 - End-to-end encrypted sharing between different users.
 - Importers for every note-taking application.
@@ -228,8 +228,10 @@ Authenticated encryption detects unauthorized modification of individual objects
 
 - Use official OAuth flows for providers that require them.
 - Request the narrowest provider permissions available.
-- Store refresh tokens in the OS credential store.
+- Store refresh tokens (OAuth providers, post-MVP) in the OS credential store.
 - Never put provider credentials in synchronized vault data.
+- **WebDAV credentials (decided 2026-11):** address, user name and password only in the local `device-state/webdav` file, sealed with `K_local` (envelope type 4), never synced, usable only while the vault is unlocked, zeroized in memory where practical, never logged. Why not a keyring: on Linux and Windows any process of the user can read it while the vault is locked; the sealed file is unreadable without the vault passphrase, is identical on all platforms and needs no JNI on Android. Limit: passphrase plus device files reveal the credential; mitigation: dedicated account or app password, rotate with the passphrase.
+- **WebDAV accounts must not be able to delete or overwrite** (checked by trying, at setup and every session; unknown is refused), so that a stolen sync password cannot destroy the remote copy (`docs/WEBDAV.md`).
 - MVP key model: one passphrase plus one recovery key (second wrap of the DEK). Enrolling a device means entering the passphrase on it; each device has a random device ID used to name its logs.
 - Device revocation is out of MVP scope. With a single DEK, a removed device keeps access to everything it already synced (and to anything later synced that it can still read). Real revocation requires DEK rotation and re-encryption of all objects; this is future work and must be documented to users.
 
@@ -248,7 +250,7 @@ nuvoletta/
 │   ├── nuvoletta-app-core/   # UI-independent app logic: session, autosave, auto-lock, queries
 │   ├── nuvoletta-sync/       # Sync state machine and conflict handling
 │   ├── nuvoletta-provider/   # Provider traits and shared sync types
-│   # Later (v1/v2): nuvoletta-webdav; post-MVP: nuvoletta-google-drive, nuvoletta-dropbox
+│   # nuvoletta-webdav (HTTPS client, credential check, WebDAV provider); post-MVP: nuvoletta-google-drive, nuvoletta-dropbox
 │   # The synced-folder and test local-folder backends live in nuvoletta-provider.
 ├── apps/
 │   └── nuvoletta-app/        # Dioxus application
@@ -370,21 +372,27 @@ Decisions made in the Phase 4 sync follow-ups (details in the SYNC_PROTOCOL.md i
 Exit criteria:
 - Two independent local vault instances can synchronize through a folder, including offline edits, conflicting edits, and simulated delayed/partial propagation, without data loss.
 
-### Phase 5 — WebDAV (deferred to v1 or v2)
+### Phase 5 — WebDAV
 
-**Deferred** (owner decision, 2026-11-15): the MVP ships with the synced-folder backend only; WebDAV is planned for v1 or v2. The sync engine needs no change for it (the provider interface is list, get, create-only put, delete; SYNC_PROTOCOL section 2 already describes the WebDAV upload rule). Open decisions for when it resumes: where WebDAV credentials are stored on each device (OS keyring, vault-encrypted device state, or prompt per session) and the HTTP stack. Phase 6 and 7 proceed without it.
+Status: implemented (un-deferred 2026-11 as the route to Android sync). Decisions and rationale: `docs/ADR/0007-webdav-backend.md`; user guide: `docs/WEBDAV.md`.
 
-When resumed: implement WebDAV, including common NAS deployments. Google Drive and Dropbox backends are post-MVP.
+- HTTPS only; rustls with the built-in web PKI roots (no JNI), optional pin of one self-signed certificate by SHA-256 fingerprint after explicit confirmation. `ureq` 3 (rustls, `allow_non_standard_methods`) plus `quick-xml`; pinning uses a small custom TLS connector because ureq has no verifier hook.
+- **Credentials** (option A): address, user name and password only in `device-state/webdav`, sealed with `K_local` (section 2.3), never synced.
+- **Refuse accounts that can delete or overwrite.** At setup and before the first cycle of every session the account is proven to read and create but not overwrite, copy over, move or delete (probe files `.nuvoletta-probe*`, `oc:permissions` as a fast path, unknown fails closed); otherwise the UI explains and nothing is stored or used. Consequently: uploads are create-only `PUT`s to the final name, no GC ("Clean up old versions" is unavailable), header generations are never deleted.
+- **Partial uploads** are handled in the engine without a protocol change: a half-written own object is re-sealed under a new id, a half-written own log segment makes the device continue under a new device id (existing fork recovery), after a grace period and only on providers whose listing is authoritative.
+- Android uses WebDAV for sync (the synced-folder option stays desktop-only).
 
 For each provider (and the synced-folder setup guides for common sync tools):
-- Document required permissions and setup.
+- Document required permissions and setup. **Done:** `docs/WEBDAV.md`.
 - Handle credentials (and OAuth, for later providers) securely.
-- Test upload, download, listing, replacement, deletion, throttling, and interrupted operations.
-- Test behavior when provider metadata or revision support is missing.
-- Verify that remote objects contain ciphertext and opaque names only.
+- Test upload, download, listing, replacement, deletion, throttling, and interrupted operations. **Done** against an in-process TLS WebDAV server (`nuvoletta-webdav` feature `test-server`).
+- Test behavior when provider metadata or revision support is missing. **Done** (no etags or mtimes, no `If-None-Match`).
+- Verify that remote objects contain ciphertext and opaque names only. **Done.**
+
+Needs a real server (not run): Nextcloud with a read+create custom-permission share and an app password; a NAS with a self-signed certificate (pin flow); a server that keeps half-written uploads; Android over mobile data. Steps in the PR description.
 
 Exit criteria:
-- A desktop vault can synchronize with WebDAV and recover safely from common network/provider failures.
+- A desktop vault can synchronize with WebDAV and recover safely from common network/provider failures. **Status:** met against the test server; real-server checks above are open.
 
 ### Phase 6 — Mobile application
 
@@ -394,18 +402,18 @@ Start with Android:
 - Verify Dioxus mobile support and required platform APIs early. **Verified:** `dx build --platform android` builds the app (debug and release, arm64) with `just android`; `aapt2` confirms application id `dev.nuvoletta.app`, minSdk 28 and a single permission (`just android-permissions`).
 - Use app-private storage by default. **Done:** vault and settings live in the app-private files directory (path derived without JNI), no storage permission, `allowBackup=false`.
 - Permissions: `INTERNET` only, because Dioxus 0.7 delivers UI updates over a loopback WebSocket and Android refuses loopback sockets without it. The CSP, the network security config and the absence of network code keep it from reaching a network (ADR 0006).
-- Sync in the MVP uses the synced-folder backend only (WebDAV is deferred), so Android needs a user-chosen folder that an external sync app (e.g. Syncthing) keeps in sync, reached through the Storage Access Framework. **Assessed, not implemented:** SAF can in principle meet the provider contract (best-effort create-only, rename where the provider supports it, no symlink information), but it needs Kotlin glue and a confined JNI dependency, is slow without a document-id cache, and cannot be tested without a device. Android sync is disabled with an in-app message; the vault format is unchanged. The recommended design and the alternatives are in ADR 0006. Raised for owner decision before committing to Android sync.
-- iOS has no equivalent shared-folder model beyond Files providers; this weighs on the iOS assessment while WebDAV is deferred.
+- Android syncs through **WebDAV** (Phase 5; sync controls are enabled for it, the synced-folder option stays desktop-only). The synced-folder route would need a user-chosen folder reached through the Storage Access Framework. **Assessed, not implemented:** SAF can in principle meet the provider contract (best-effort create-only, rename where the provider supports it, no symlink information), but it needs Kotlin glue and a confined JNI dependency, is slow without a document-id cache, and cannot be tested without a device. The folder option is hidden on Android with an in-app message; the vault format is unchanged. The recommended design and the alternatives are in ADR 0006. Raised for owner decision before committing to Android sync.
+- iOS has no equivalent shared-folder model beyond Files providers; WebDAV is the sync route there too.
 - Integrate Android secure credential facilities where appropriate. **Not applicable in the MVP:** passphrase-only unlock (section 11) and no stored credentials.
 - Handle background/foreground transitions and interrupted sync. **Done:** leaving the foreground saves and then locks (never discards; a failed save keeps the vault unlocked and says so on return); sync is safe to interrupt by design. `FLAG_SECURE` hides content from screenshots and recents.
 - Make editing, locking, and conflict resolution practical on a small screen. **Done in CSS and view state:** list and note take turns, wrapping top bar, 44 px touch targets, detail fields behind a toggle; conflict view and dialogs reuse the responsive dialog.
 
-Then assess iOS support against actual framework and platform constraints. **Assessed (ADR 0006):** the app should build with wry on WKWebView, but there is no viable iOS sync backend until WebDAV exists; recommendation is to defer iOS until then.
+Then assess iOS support against actual framework and platform constraints. **Assessed (ADR 0006):** the app should build with wry on WKWebView, but there was no viable iOS sync backend before WebDAV; with WebDAV in place iOS can be reassessed.
 
 Needs on-device testing (nothing was run on a device or emulator): launch and create or unlock a vault; the lifecycle lock on home, app switch and screen off; `FLAG_SECURE` (screenshot and recents blank); soft keyboard with the CodeMirror editor (IME, selection, resize); layout at phone sizes; that no note text reaches `adb logcat`; unlock time for a large vault on a mid-range phone.
 
 Exit criteria:
-- The same vault format and sync protocol work across desktop and Android, with no platform-specific weakening of the security model. **Status:** the vault format is shared and no security rule was relaxed; the sync half of the criterion is open until a folder backend for Android (SAF) or WebDAV lands.
+- The same vault format and sync protocol work across desktop and Android, with no platform-specific weakening of the security model. **Status:** the vault format is shared and no security rule was relaxed; the sync half is met by WebDAV (untested on a device).
 
 ### Phase 7 — Hardening and release
 
@@ -467,7 +475,7 @@ Current direction:
 - Metadata (title, path, tags) lives inside each note's encrypted envelope; no global index object.
 - Keys: single passphrase plus one recovery key per vault (second DEK wrap); enrollment by passphrase; no revocation in MVP.
 - Vaults: one vault per install for the MVP; multi-vault support may come later, so avoid hard-coding a singleton vault in core APIs.
-- Sync: provider-independent engine with per-device append-only logs; the only MVP backend is an externally synced folder; WebDAV deferred to v1 or v2 (2026-11-15); Google Drive and Dropbox post-MVP.
+- Sync: provider-independent engine with per-device append-only logs; backends: an externally synced folder, and WebDAV with create-only credentials (un-deferred 2026-11, ADR 0007); Google Drive and Dropbox post-MVP.
 - Attachments: post-MVP. Local note version history: MVP if cheap, else early post-MVP.
 - Platforms: desktop and Android first; iOS feasibility to be validated.
 - Plugins: architecture should allow extensions later; plugin runtime is not MVP scope.

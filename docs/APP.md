@@ -33,9 +33,27 @@ bundle, brand images) is compiled into the binary; there are no files to install
    The panel under the editor lists backlinks and unresolved links; the sidebar lists tags; the search
    box finds text in titles, paths, tags and bodies.
 
+## WebDAV sync
+
+The *Sync* dialog has a *WebDAV* section (the only sync option on Android). Enter the folder address
+(`https://…`; plain `http://` is refused), user name and password (an app password where the server
+offers them) and press *Check account and save*. The check runs in the background and tries what the
+account may do. If it can **delete or overwrite** files, or its rights cannot be determined, it is
+**refused and not saved**, with an explanation: a stolen sync password could otherwise wipe out your
+synced notes; create an account or share that can read and create files but not change or delete
+them ([setup guide](WEBDAV.md)). If the server's certificate is not signed by a known authority (a
+NAS), the dialog shows its SHA-256 fingerprint without having sent your password; after you confirm
+that it matches what the server shows, exactly that certificate is trusted for the address. The
+address, user name and password are stored encrypted on this device only
+([storage format](STORAGE_FORMAT.md)), are not synced, and are readable only while the vault is
+unlocked; enter them on each device. The account is checked again at the first sync of every
+session. *Forget these credentials* removes them from this device. On WebDAV, *Clean up old versions*
+is unavailable (the account cannot delete), and an upload cut off by a network failure that leaves a
+damaged file is worked around automatically after ten minutes (a notice explains it).
+
 ## Sync
 
-Sync is optional and off until you choose a folder. The app only reads and writes files in that
+Sync is optional and off until you choose a folder (desktop) or set up WebDAV (desktop and Android). The app only reads and writes files in that
 folder; your sync tool (Syncthing, Dropbox, iCloud, a Nextcloud client, …) moves them between
 devices. Only encrypted files are written there. The protocol is in
 [SYNC_PROTOCOL.md](SYNC_PROTOCOL.md).
@@ -189,4 +207,4 @@ folder of `.md` files and never overwrites an existing note. See the
   and writes the chosen local folder, and the Content-Security-Policy is unchanged. The conflict view
   shows note text, so it has the same plaintext-in-the-webview limit as the editor.
 - **Not available yet:** removing deleted notes' last versions from the sync folder, editing a merge directly inside the conflict view (use *Use version N and edit*), a keyboard
-  shortcut for *Sync now* (use the *Sync now* button), WebDAV and other providers.
+  shortcut for *Sync now* (use the *Sync now* button) and providers other than a synced folder and WebDAV.

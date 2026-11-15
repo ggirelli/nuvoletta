@@ -9,7 +9,7 @@ pub use dioxus::desktop as shell;
 #[cfg(all(feature = "mobile", not(feature = "desktop")))]
 pub use dioxus::mobile as shell;
 
-/// True on Android: the vault is fixed in app-private storage and sync is not available.
+/// True on Android: the vault is fixed in app-private storage and sync uses WebDAV only.
 pub const ANDROID: bool = cfg!(target_os = "android");
 
 /// The settings file.

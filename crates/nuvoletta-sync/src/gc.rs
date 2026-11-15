@@ -63,6 +63,8 @@ pub enum GcSkip {
     Forks,
     /// The local sync state is being rebuilt from the remote and is incomplete.
     Rebuilding,
+    /// The provider's credentials must not delete (WebDAV): nothing can be collected.
+    NoDelete,
 }
 
 /// Aggregate reasons why content revisions on the remote were kept.
@@ -211,6 +213,10 @@ impl<P: Provider> Syncer<P> {
             dry_run: opts.dry_run,
             ..GcReport::default()
         };
+        if !self.provider.capabilities().can_delete {
+            report.skipped = Some(GcSkip::NoDelete);
+            return Ok(report);
+        }
         if self.state.rebuilt {
             report.skipped = Some(GcSkip::Rebuilding);
             return Ok(report);

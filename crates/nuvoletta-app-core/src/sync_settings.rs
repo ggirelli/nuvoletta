@@ -1,6 +1,7 @@
-//! Per-vault, per-device sync settings: whether sync is on and which local folder is the
-//! externally synced one. Stored in `<vault>/.nuvoletta/device-state/sync.json`, never inside
-//! synced data and never uploaded (`docs/STORAGE_FORMAT.md`). No secrets.
+//! Per-vault, per-device sync settings: whether sync is on, which backend is used and which local
+//! folder is the externally synced one. Stored in `<vault>/.nuvoletta/device-state/sync.json`,
+//! never inside synced data and never uploaded (`docs/STORAGE_FORMAT.md`). No secrets: the WebDAV
+//! address and credentials live in the sealed `device-state/webdav` file (see `webdav.rs`).
 
 use crate::error::{Error, Result};
 use nuvoletta_storage::fsutil::write_atomic;
@@ -12,13 +13,28 @@ use std::path::{Path, PathBuf};
 pub(crate) const DEVICE_STATE_DIR: &str = "device-state";
 const FILE: &str = "sync.json";
 
+/// Where a vault is synced to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SyncBackend {
+    /// A folder that an external tool (Syncthing, Dropbox, a mounted NAS) keeps in step.
+    #[default]
+    Folder,
+    /// A WebDAV location (Nextcloud, ownCloud, a NAS) with an account that can read and create
+    /// but not change or delete files.
+    WebDav,
+}
+
 /// Sync settings of one vault on this device.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SyncSettings {
-    /// Sync runs only while this is set (and a folder is chosen).
+    /// Sync runs only while this is set (and the chosen backend is set up).
     pub enabled: bool,
-    /// The externally synced folder.
+    /// The backend in use.
+    pub backend: SyncBackend,
+    /// The externally synced folder (kept when the backend is switched to WebDAV).
     pub folder: Option<PathBuf>,
+    /// WebDAV credentials are stored on this device (the address is not kept here).
+    pub webdav_configured: bool,
 }
 
 pub(crate) fn device_state_dir(vault_root: &Path) -> PathBuf {
@@ -48,6 +64,14 @@ impl SyncSettings {
                 .get("enabled")
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false),
+            backend: match v.get("backend").and_then(serde_json::Value::as_str) {
+                Some("webdav") => SyncBackend::WebDav,
+                _ => SyncBackend::Folder,
+            },
+            webdav_configured: v
+                .get("webdav")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
             folder: v
                 .get("folder")
                 .and_then(serde_json::Value::as_str)
@@ -62,6 +86,11 @@ impl SyncSettings {
     pub fn save(&self, vault_root: &Path) -> Result<()> {
         let v = serde_json::json!({
             "enabled": self.enabled,
+            "backend": match self.backend {
+                SyncBackend::Folder => "folder",
+                SyncBackend::WebDav => "webdav",
+            },
+            "webdav": self.webdav_configured,
             "folder": self.folder.as_ref().map(|p| p.to_string_lossy().into_owned()),
         });
         write_device_file(vault_root, FILE, v.to_string().as_bytes())
@@ -70,7 +99,11 @@ impl SyncSettings {
     /// Whether sync should run.
     #[must_use]
     pub fn active(&self) -> bool {
-        self.enabled && self.folder.is_some()
+        self.enabled
+            && match self.backend {
+                SyncBackend::Folder => self.folder.is_some(),
+                SyncBackend::WebDav => self.webdav_configured,
+            }
     }
 }
 
@@ -106,7 +139,9 @@ mod tests {
         assert_eq!(SyncSettings::load(d.path()), SyncSettings::default());
         let s = SyncSettings {
             enabled: true,
+            backend: SyncBackend::WebDav,
             folder: Some("/some/folder".into()),
+            webdav_configured: true,
         };
         s.save(d.path()).unwrap();
         assert_eq!(SyncSettings::load(d.path()), s);

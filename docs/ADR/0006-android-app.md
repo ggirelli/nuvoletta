@@ -101,8 +101,8 @@ resolution with a cache, create then verify the returned name, temp then rename,
 behind a small Rust trait that models a document tree, unit-test it against an in-memory fake
 (collisions, rename refusal, case-insensitive volumes, interrupted steps), and bind the trait to
 Kotlin through one confined JNI dependency. Alternatives, in the owner's hands:
-WebDAV (deferred, needs the HTTP stack and a credential decision and would add a real `INTERNET`
-use), or a build variant with all-files access for sideloaded use only (broad permission, not
+WebDAV (**since implemented**, ADR 0007: Android sync uses it; it makes real use of `INTERNET`, from
+the Rust side only, the page CSP is unchanged), or a build variant with all-files access for sideloaded use only (broad permission, not
 recommended).
 
 Until then the Android vault is a stand-alone vault. The format is identical, so a vault can be put

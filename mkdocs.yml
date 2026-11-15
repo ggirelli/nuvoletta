@@ -51,6 +51,7 @@ nav:
   - Home: index.md
   - Plan: plan.md
   - Desktop and Android app: APP.md
+  - WebDAV setup: WEBDAV.md
   - Design:
       - Threat model: THREAT_MODEL.md
       - Crypto format: CRYPTO_FORMAT.md
@@ -64,6 +65,7 @@ nav:
           - ADR 0004: ADR/0004-desktop-app-architecture.md
           - ADR 0005: ADR/0005-sync-protocol.md
           - ADR 0006: ADR/0006-android-app.md
+          - ADR 0007: ADR/0007-webdav-backend.md
   - Development: development.md
 
 markdown_extensions:

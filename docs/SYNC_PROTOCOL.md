@@ -234,6 +234,12 @@ A's segment `l/…0011.nvlog` (seq 11 to 12) arrives at B before `l/…0009.nvlo
 
 Two or more in-process vault instances over a fault-injecting folder backend (drops, reorders, delays, truncates, duplicates, renames to conflicted-copy names, rolls back); property tests: all devices reach identical heads from any delivery order; no revision lost; idempotent re-sync; crash at every step of the sync cycle.
 
+## WebDAV notes (Phase 5, no format change; ADR 0007)
+
+- Capabilities gained `can_delete` and `authoritative`; `Provider::list_cycle` lets a provider skip the `o/` shards in the per-cycle listing. On WebDAV: uploads are create-only `PUT`s with `If-None-Match: *` straight to the final name (no `.tmp-` name, no `MOVE`), nothing is ever deleted (no GC, no header deletion), and the account is verified not to be able to delete or overwrite.
+- Partial upload of an own file on an `authoritative` provider (cannot be removed or replaced): an object name taken by other bytes is re-sealed under a fresh `object_id`; an own segment name taken by an unreadable file makes the device continue under a new device id (section 10.4 recovery, `unpublished`), both after `partial_upload_grace_ms` (default 10 minutes, kept in the journal). A synced folder is never given up on: the rest of the file may still arrive.
+- The credential check's probe names (`.nuvoletta-probe`, `.nuvoletta-probe-b`, `.nuvoletta-probe-<random>`, `-moved`) are outside the grammar and therefore stray.
+
 ## Implementation notes (nuvoletta-sync, Phase 4)
 
 Places where the text above leaves a choice, is ambiguous, or the implementation is deliberately narrower. The safest reading was taken in each case; none changes a byte format of `CRYPTO_FORMAT.md`.

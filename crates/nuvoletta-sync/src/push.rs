@@ -4,7 +4,7 @@
 use crate::CrashPoint;
 use crate::engine::{Syncer, Warning};
 use crate::error::Result;
-use crate::ids::{Hash32, Id16};
+use crate::ids::{Hash32, Id16, RevId};
 use crate::log::{
     Entry, KIND_CHECKPOINT, KIND_DELETE, KIND_PUT, SeenPos, SegmentError, open_segment,
     seal_segment,
@@ -26,7 +26,8 @@ impl<P: Provider> Syncer<P> {
     /// Step 1: upload the object of every own PUT intent that is not confirmed on the remote.
     /// An existing file under the name is never overwritten: identical bytes confirm, anything
     /// else (a half-propagated file) is retried next cycle.
-    pub(crate) fn push_objects(&mut self, _vault: &Unlocked) -> Result<()> {
+    pub(crate) fn push_objects(&mut self, vault: &mut Unlocked) -> Result<()> {
+        let mut blocked_revs: Vec<RevId> = Vec::new();
         for idx in 0..self.state.journal.intents.len() {
             let intent = self.state.journal.intents[idx].clone();
             if intent.kind != KIND_PUT || intent.uploaded {
@@ -39,9 +40,15 @@ impl<P: Provider> Syncer<P> {
                         self.report.objects_pushed += 1;
                         true
                     }
-                    Err(ProviderError::AlreadyExists(_)) => {
-                        matches!(self.provider.get(&name), Ok(remote) if remote == bytes)
-                    }
+                    Err(ProviderError::AlreadyExists(_)) => match self.provider.get(&name) {
+                        Ok(remote) if remote == bytes => true,
+                        Ok(_) => {
+                            blocked_revs.push(intent.rev);
+                            false
+                        }
+                        Err(ProviderError::NotFound(_)) => false,
+                        Err(e) => return Err(e.into()),
+                    },
                     Err(e) => return Err(e.into()),
                 },
                 None => {
@@ -59,9 +66,78 @@ impl<P: Provider> Syncer<P> {
             };
             if confirmed {
                 self.state.journal.intents[idx].uploaded = true;
+                self.clear_blocked(&intent.rev);
                 self.state.touch_journal();
             }
         }
+        for rev in blocked_revs {
+            self.handle_blocked_object(vault, rev)?;
+        }
+        Ok(())
+    }
+
+    fn clear_blocked(&mut self, key: &Id16) {
+        if let Some(b) = self.state.journal.blocked.as_mut()
+            && b.remove(key).is_some()
+        {
+            if b.is_empty() {
+                self.state.journal.blocked = None;
+            }
+            self.state.touch_journal();
+        }
+    }
+
+    /// Record that `key` is blocked by a half-written remote file and tell whether the grace
+    /// period has passed. Only providers whose listing is authoritative ever give up waiting: on
+    /// a synced folder the rest of the file may still arrive.
+    fn blocked_too_long(&mut self, key: Id16) -> bool {
+        if !self.provider.capabilities().authoritative {
+            return false;
+        }
+        let now = now_ms();
+        let since = *self
+            .state
+            .journal
+            .blocked
+            .get_or_insert_with(BTreeMap::new)
+            .entry(key)
+            .or_insert(now);
+        self.state.touch_journal();
+        now.saturating_sub(since) >= self.cfg.partial_upload_grace_ms
+    }
+
+    /// An object name taken by a file with other bytes (a half-written earlier upload that the
+    /// credentials can neither overwrite nor delete). After the grace period the revision is
+    /// sealed again under a fresh random id: the note is rewritten with identical content, the
+    /// next scan sees a new local revision with the same parents and replaces the intent.
+    fn handle_blocked_object(&mut self, vault: &mut Unlocked, rev: RevId) -> Result<()> {
+        if !self.blocked_too_long(rev) {
+            return Ok(());
+        }
+        let Some(intent) = self
+            .state
+            .journal
+            .intents
+            .iter()
+            .find(|i| i.rev == rev)
+            .cloned()
+        else {
+            return Ok(());
+        };
+        // Only the note's current revision can be re-sealed in place; an older re-emitted one
+        // stays blocked (it is reported by the missing object, never overwritten).
+        if self.state.notes.get(&intent.note).and_then(|r| r.local_rev) != Some(rev) {
+            return Ok(());
+        }
+        let Some(bytes) = self.state.get_rev(&rev)? else {
+            return Ok(());
+        };
+        let payload = crate::local::open_revision(vault.keys(), &bytes, &intent.note, Some(&rev))?;
+        let (_, fresh) = crate::local::seal_revision(vault.keys(), &payload)?;
+        vault.install_revision(&fresh)?;
+        self.clear_blocked(&rev);
+        self.record_local_changes(vault)?;
+        self.report.warnings.push(Warning::ObjectResealed { rev });
         Ok(())
     }
 
@@ -200,7 +276,24 @@ impl<P: Provider> Syncer<P> {
             Err(ProviderError::AlreadyExists(_)) => match self.provider.get(&name) {
                 Ok(remote) if remote == sealed.bytes => {}
                 Ok(remote) => match open_segment(vault.keys(), &remote) {
-                    Err(SegmentError::Unreadable) => return Ok(()), // not fully arrived: wait
+                    Err(SegmentError::Unreadable) => {
+                        // Not fully arrived: wait. On a provider where a listed file is the
+                        // truth it never will, and nothing may remove it: after the grace
+                        // period continue under a new device id (the entries of this segment
+                        // are unconfirmed, so they are re-emitted).
+                        if self.blocked_too_long(me) {
+                            self.clear_blocked(&me);
+                            self.recover_own_fork(vault, sealed.first_seq, true)?;
+                            let new = self.state.device_id;
+                            self.report
+                                .warnings
+                                .retain(|w| !matches!(w, Warning::OwnForkRecovered { .. }));
+                            self.report
+                                .warnings
+                                .push(Warning::LogRestarted { old: me, new });
+                        }
+                        return Ok(());
+                    }
                     Ok(seg) if seg.device == me => {
                         let ours = open_segment(vault.keys(), &sealed.bytes)
                             .map_err(|_| crate::Error::State("sealed segment unreadable"))?;
@@ -243,6 +336,7 @@ impl<P: Provider> Syncer<P> {
         etag: Option<String>,
     ) -> Result<()> {
         let sealed = self.state.journal.sealed.take().expect("checked");
+        self.clear_blocked(&self.state.device_id.clone());
         if let Ok(seg) = open_segment(vault.keys(), &sealed.bytes) {
             for pe in &seg.entries {
                 if let (Some(note), Some(rev)) = (pe.entry.note_id, pe.entry.rev_id)

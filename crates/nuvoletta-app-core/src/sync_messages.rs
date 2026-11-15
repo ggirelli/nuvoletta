@@ -1,6 +1,7 @@
 //! Words for the sync view: integrity warnings and errors turned into explanations that say what
 //! happened, what it means and what to do. Never includes note content or keys.
 
+use crate::sync_settings::SyncBackend;
 use crate::sync_types::{InvalidInfo, StrayInfo, SyncNotice, SyncProblem};
 use nuvoletta_sync::{Error, InvalidEntry, ProviderError, StrayFile, StrayKind, Warning};
 
@@ -100,6 +101,28 @@ pub(crate) fn describe_warning(w: &Warning, now_ms: i64) -> SyncNotice {
                 short(rev)
             ),
         ),
+        Warning::LogRestarted { old, new } => (
+            "log-restarted",
+            "An interrupted upload blocked this device's history, so it started a new one"
+                .to_owned(),
+            format!(
+                "An upload was cut off and the server kept a damaged file under the name this device needs next. \
+                 The account cannot remove or replace files, so this device continues as {} (it was {}). \
+                 Nothing was lost: unsent changes were sent again. Other devices may show a warning that the \
+                 old history stops at a damaged file; that warning is expected and harmless.",
+                short(new),
+                short(old)
+            ),
+        ),
+        Warning::ObjectResealed { rev } => (
+            "object-resealed",
+            "An interrupted upload of a note version was repeated".to_owned(),
+            format!(
+                "The upload of version {} was cut off and the server kept a damaged file under its name. The note \
+                 was saved again under a new name and sent; nothing was lost.",
+                short(rev)
+            ),
+        ),
         Warning::HeaderNewer { generation } => (
             "header-newer",
             "The passphrase or recovery key was changed elsewhere".to_owned(),
@@ -190,19 +213,40 @@ fn problem(message: impl Into<String>, hint: impl Into<String>) -> SyncProblem {
 }
 
 /// Describe a failed cycle.
-pub(crate) fn describe_error(e: &Error) -> SyncProblem {
+pub(crate) fn describe_error(e: &Error, backend: SyncBackend) -> SyncProblem {
+    let dav = backend == SyncBackend::WebDav;
     match e {
+        Error::Provider(ProviderError::Transient(d)) if dav => problem(
+            format!("The sync server could not be reached ({d})."),
+            "Sync retries automatically. Check your connection and that the server is up.",
+        ),
         Error::Provider(ProviderError::Transient(d)) => problem(
             format!("The sync folder could not be reached ({d})."),
             "Sync retries automatically. If the folder is on a removable or network drive, check that it is connected.",
+        ),
+        Error::Provider(ProviderError::Auth(_)) => problem(
+            "The server rejected the user name or password.",
+            "The password may have been changed or revoked. Enter the credentials again in the Sync settings.",
+        ),
+        Error::Provider(ProviderError::Forbidden(d)) => problem(
+            format!("The account is not allowed to do this ({d})."),
+            "Check the permissions of the account: it needs to read and create files.",
+        ),
+        Error::Provider(ProviderError::UnsafeCredentials(d)) => problem(
+            "Sync is stopped: this account can change or delete files on the server.",
+            d.clone(),
+        ),
+        Error::Provider(ProviderError::NotFound(d) | ProviderError::Other(d)) if dav => problem(
+            format!("The sync server could not be used ({d})."),
+            "Check the address and the account in the Sync settings.",
         ),
         Error::Provider(ProviderError::NotFound(d) | ProviderError::Other(d)) => problem(
             format!("The sync folder could not be used ({d})."),
             "Check that the folder still exists and that you may read and write it, or choose another folder in Settings.",
         ),
         Error::Provider(ProviderError::AlreadyExists(d)) => problem(
-            format!("A file in the sync folder was in the way ({d})."),
-            "Nothing was overwritten. Sync will try again; if this repeats, check the folder for stray files.",
+            format!("A file in the sync location was in the way ({d})."),
+            "Nothing was overwritten. Sync will try again; if this repeats, check the location for stray files.",
         ),
         Error::Io(d) => problem(
             format!("Local sync data could not be read or written ({d})."),
@@ -210,11 +254,11 @@ pub(crate) fn describe_error(e: &Error) -> SyncProblem {
         ),
         Error::State(d) => problem(
             format!("The local sync data is damaged ({d})."),
-            "Your notes were not changed and nothing was uploaded from the damaged state. Most of it is rebuilt from the sync folder; if this persists, keep a copy of the vault folder before turning sync off and on.",
+            "Your notes were not changed and nothing was uploaded from the damaged state. Most of it is rebuilt from the sync location; if this persists, keep a copy of the vault folder before turning sync off and on.",
         ),
         Error::Crypto(_) | Error::Storage(_) => problem(
             "A file failed verification or could not be read.",
-            "The sync folder may belong to a different vault or contain damaged files. Your notes were not changed.",
+            "The sync location may belong to a different vault or contain damaged files. Your notes were not changed.",
         ),
         other => problem(
             format!("Sync stopped: {other}."),
@@ -225,6 +269,11 @@ pub(crate) fn describe_error(e: &Error) -> SyncProblem {
 
 /// Describe a failed resolution action.
 pub(crate) fn describe_resolution_error(e: &Error) -> String {
+    describe_resolution_error_for(e, SyncBackend::Folder)
+}
+
+/// Like [`describe_resolution_error`], with the wording of the backend in use.
+pub(crate) fn describe_resolution_error_for(e: &Error, backend: SyncBackend) -> String {
     match e {
         Error::InvalidResolution(_) | Error::NoteNotFound => {
             "The versions of this note changed in the meantime. Review them again.".to_owned()
@@ -232,6 +281,6 @@ pub(crate) fn describe_resolution_error(e: &Error) -> String {
         Error::RevisionUnavailable => {
             "That version has not finished syncing yet. Try again after the next sync.".to_owned()
         }
-        other => describe_error(other).message,
+        other => describe_error(other, backend).message,
     }
 }

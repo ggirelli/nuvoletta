@@ -26,6 +26,7 @@ mod sync_messages;
 mod sync_settings;
 mod sync_types;
 mod tree;
+mod webdav;
 
 pub use app::{
     App, DEFAULT_AUTOSAVE_DEBOUNCE, NoteInfo, NoteRef, Phase, SearchResult, TickOutcome,
@@ -38,14 +39,16 @@ pub use error::{Error, Result};
 pub use lifecycle::BackgroundOutcome;
 pub use links::{LinkAction, classify_link};
 pub use platform::{
-    ANDROID_APP_ID, ANDROID_SYNC_UNAVAILABLE, AndroidPaths, android_files_dir, package_from_cmdline,
+    ANDROID_APP_ID, ANDROID_FOLDER_SYNC_UNAVAILABLE, AndroidPaths, android_files_dir,
+    package_from_cmdline,
 };
 pub use settings::{DEFAULT_AUTO_LOCK_MINUTES, MAX_AUTO_LOCK_MINUTES, Settings, parse_tags};
-pub use sync::{DeletedItem, SyncTiming};
-pub use sync_settings::{SyncSettings, check_sync_folder};
+pub use sync::{DeletedItem, SyncTiming, WEBDAV_NO_CLEANUP};
+pub use sync_settings::{SyncBackend, SyncSettings, check_sync_folder};
 pub use sync_types::{
     AttentionItem, AttentionReason, CleanupSummary, ConflictAction, ConflictItem, ConflictKind,
     HeadDetail, HeadView, InvalidInfo, ResolveOutcome, StrayInfo, SyncEvent, SyncFinished,
     SyncNotice, SyncProblem, SyncState, SyncStatus,
 };
 pub use tree::{TreeRow, build_tree};
+pub use webdav::{WebDavEvent, WebDavInput, WebDavSummary};
