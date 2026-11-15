@@ -2,7 +2,7 @@
 
 Status: Draft — Phase 0, owner decisions applied, pending cross-review
 
-Scope: MVP (PLAN.md rev 2): one vault per install, one passphrase plus one recovery key, per-note encrypted envelopes, per-device append-only sync logs over an externally synced folder (later WebDAV), desktop and Android. Companion docs: `CRYPTO_FORMAT.md`, `SYNC_PROTOCOL.md`.
+Scope: MVP (PLAN.md rev 2): one vault per install, one passphrase plus one recovery key, per-note encrypted envelopes, per-device append-only sync logs over an externally synced folder (WebDAV deferred to v1 or v2), desktop and Android. Companion docs: `CRYPTO_FORMAT.md`, `SYNC_PROTOCOL.md`.
 
 ## 1. Assets
 
