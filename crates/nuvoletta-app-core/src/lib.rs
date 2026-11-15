@@ -17,7 +17,9 @@ mod clock;
 mod csp;
 mod diff;
 mod error;
+mod lifecycle;
 mod links;
+mod platform;
 mod settings;
 mod sync;
 mod sync_messages;
@@ -33,7 +35,11 @@ pub use clock::{Clock, ManualClock, SystemClock};
 pub use csp::CONTENT_SECURITY_POLICY;
 pub use diff::{DiffKind, DiffLine, diff_lines};
 pub use error::{Error, Result};
+pub use lifecycle::BackgroundOutcome;
 pub use links::{LinkAction, classify_link};
+pub use platform::{
+    ANDROID_APP_ID, ANDROID_SYNC_UNAVAILABLE, AndroidPaths, android_files_dir, package_from_cmdline,
+};
 pub use settings::{DEFAULT_AUTO_LOCK_MINUTES, MAX_AUTO_LOCK_MINUTES, Settings, parse_tags};
 pub use sync::SyncTiming;
 pub use sync_settings::{SyncSettings, check_sync_folder};

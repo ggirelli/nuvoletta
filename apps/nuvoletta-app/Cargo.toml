@@ -12,15 +12,20 @@ workspace = true
 
 [dependencies]
 dioxus = { version = "0.7", features = [] }
-dirs = "6"
 nuvoletta-app-core = { path = "../../crates/nuvoletta-app-core", version = "0.0.0" }
 nuvoletta-core = { path = "../../crates/nuvoletta-core", version = "0.0.0" }
-rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 serde_json.workspace = true
 tokio = { version = "1", default-features = false, features = ["time"] }
 webbrowser = "1"
 zeroize.workspace = true
 
+# Desktop-only: the config directory and the native folder dialog. Android has neither (see
+# `platform.rs`).
+[target.'cfg(not(target_os = "android"))'.dependencies]
+dirs = "6"
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
+
 [features]
 default = ["desktop"]
 desktop = ["dioxus/desktop"]
+mobile = ["dioxus/mobile"]

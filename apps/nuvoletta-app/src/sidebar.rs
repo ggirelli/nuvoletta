@@ -15,10 +15,12 @@ pub fn Sidebar() -> Element {
     let tag = ui.tag.read().clone();
     let open = core.read(|a| a.open_info().map(|i| i.id));
     let c = core.clone();
-    let open_note = move |id: NoteId| {
-        if let Err(e) = c.act(|a| a.open_note(id)) {
-            ui.error(e.user_message());
+    let open_note = move |id: NoteId| match c.act(|a| a.open_note(id)) {
+        Ok(_) => {
+            let mut l = ui.list_open;
+            l.set(false);
         }
+        Err(e) => ui.error(e.user_message()),
     };
 
     let body = if !query.is_empty() {
@@ -81,7 +83,7 @@ pub fn Sidebar() -> Element {
         rsx! {
             h2 { "Notes" }
             if rows.is_empty() {
-                p { class: "hint", "No notes yet. Press Ctrl+N to write the first one." }
+                p { class: "hint", "No notes yet. Use New note to write the first one." }
             }
             ul { role: "tree", "aria-label": "Notes by folder",
                 for (i, row) in rows.into_iter().enumerate() {

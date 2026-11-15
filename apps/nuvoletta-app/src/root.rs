@@ -6,20 +6,28 @@ use crate::core::Core;
 use crate::dialogs::{ForcedPassphrase, LockBlocked, RecoveryScreen, Settings};
 use crate::editor::Workspace;
 use crate::picker::{Picker, Unlock};
+use crate::platform::shell::tao::event::{Event, WindowEvent};
+use crate::platform::shell::use_wry_event_handler;
 use crate::sidebar::Sidebar;
 use crate::sync::{SyncControls, SyncDialog};
 use crate::ui::Ui;
-use dioxus::desktop::tao::event::{Event, WindowEvent};
-use dioxus::desktop::use_wry_event_handler;
 use dioxus::prelude::*;
-use nuvoletta_app_core::{LinkAction, Phase, TickOutcome, classify_link};
+use nuvoletta_app_core::{BackgroundOutcome, LinkAction, Phase, TickOutcome, classify_link};
 use std::time::Duration;
 
 /// The application root.
 #[component]
 pub fn Root() -> Element {
     let rev = use_signal(|| 0u64);
-    let core = use_context_provider(|| Core::new(rev));
+    let core = use_context_provider(|| {
+        let core = Core::new(rev);
+        // Android: the vault is always in the same private place, so go straight to unlocking it.
+        // (Not a vault, or missing: the picker is shown to create one.)
+        if let Some(dir) = crate::platform::fixed_vault_dir() {
+            let _ = core.quiet(|a| a.open_vault(&dir));
+        }
+        core
+    });
     let ui = use_context_provider(|| Ui {
         notice: Signal::new(None),
         recovery_key: Signal::new(None),
@@ -30,6 +38,7 @@ pub fn Root() -> Element {
         tag: Signal::new(None),
         edit_tick: Signal::new(0),
         confirm_delete: Signal::new(None),
+        list_open: Signal::new(true),
         sync: Signal::new(false),
         conflict: Signal::new(None),
         clock_ms: Signal::new(crate::sync::wall_ms()),
@@ -103,15 +112,29 @@ pub fn Root() -> Element {
     });
 
     // Closing the window flushes unsaved edits (best effort: a failure cannot stop the close).
+    // On mobile, leaving the foreground saves and locks (ADR 0006); the app may be frozen or
+    // killed at any moment after that, so nothing is left to a timer.
     let c = core.clone();
-    use_wry_event_handler(move |event, _| {
-        if let Event::WindowEvent {
+    use_wry_event_handler(move |event, _| match event {
+        Event::WindowEvent {
             event: WindowEvent::CloseRequested,
             ..
-        } = event
-        {
+        } => {
             let _ = c.quiet(|a| a.close_vault(false));
         }
+        Event::Suspended => match c.quiet(nuvoletta_app_core::App::on_background) {
+            BackgroundOutcome::Locked => {
+                bridge::destroy();
+                ui.reset_for_lock();
+                c.bump();
+            }
+            BackgroundOutcome::LockBlocked(msg) => {
+                let mut lb = ui.lock_blocked;
+                lb.set(Some(msg));
+            }
+            BackgroundOutcome::NotUnlocked | BackgroundOutcome::LockPending => {}
+        },
+        _ => {}
     });
 
     let phase = core.read(nuvoletta_app_core::App::phase);
@@ -121,6 +144,8 @@ pub fn Root() -> Element {
     let sync_open = *ui.sync.read();
     let lock_blocked = ui.lock_blocked.read().clone();
     let notice = ui.notice.read().clone();
+    // On narrow screens: the list when asked for, and whenever no note is open.
+    let show_list = *ui.list_open.read() || core.read(|a| a.open_info().is_none());
 
     rsx! {
         a { class: "skip", href: "#cm", "Skip to editor" }
@@ -148,7 +173,7 @@ pub fn Root() -> Element {
                     } else {
                         div { class: "app",
                             Topbar {}
-                            div { class: "body",
+                            div { class: if show_list { "body show-list" } else { "body" },
                                 Sidebar {}
                                 Workspace {}
                             }
@@ -191,7 +216,11 @@ pub fn lock(core: &Core, ui: Ui, force: bool) {
 /// Create a note in `folder` and focus the editor.
 pub fn new_note(core: &Core, ui: Ui, folder: &str) {
     match core.act(|a| a.create_note(folder)) {
-        Ok(_) => bridge::focus_editor(),
+        Ok(_) => {
+            let mut l = ui.list_open;
+            l.set(false);
+            bridge::focus_editor();
+        }
         Err(e) => ui.error(e.user_message()),
     }
 }
@@ -232,7 +261,7 @@ fn handle_message(core: &Core, ui: Ui, msg: &serde_json::Value) {
                 }
                 // Only ever reached by a click on a link in the preview (see js/entry.js).
                 LinkAction::External(url) => {
-                    if webbrowser::open(&url).is_err() {
+                    if !crate::platform::open_external(&url) {
                         ui.error("Could not open the link in your browser.");
                     }
                 }
@@ -291,7 +320,7 @@ fn Topbar() -> Element {
                 input {
                     id: "search",
                     r#type: "search",
-                    placeholder: "Search notes (Ctrl+K)",
+                    placeholder: "Search notes",
                     value: "{ui.query}",
                     oninput: move |e| {
                         let mut q = ui.query;
@@ -321,7 +350,15 @@ fn Topbar() -> Element {
             }
             span { class: if bad { "status bad" } else { "status" }, role: "status", "{status}" }
             div { class: "spacer" }
-            SyncControls {}
+            if crate::platform::ANDROID {
+                button {
+                    title: "Why sync is not available",
+                    onclick: move |_| ui.info(nuvoletta_app_core::ANDROID_SYNC_UNAVAILABLE),
+                    "Sync: off"
+                }
+            } else {
+                SyncControls {}
+            }
             button {
                 onclick: move |_| {
                     let mut s = ui.settings;

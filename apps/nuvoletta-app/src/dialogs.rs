@@ -294,73 +294,80 @@ pub fn Settings() -> Element {
                     }
                 }
 
-                section {
-                    h2 { "Export notes" }
-                    p { class: "warning", "Export writes your notes as plain, unencrypted Markdown files. Anyone who can read that folder can read your notes, and locking the vault does not remove them. Choose a place you trust and delete the files when you are done." }
-                    form {
-                        onsubmit: move |e| {
-                            e.prevent_default();
-                            let dest = PathBuf::from(export_dir.read().trim());
-                            if dest.as_os_str().is_empty() {
-                                export_msg.set(Some((false, "Choose a destination folder.".into())));
-                                return;
-                            }
-                            let r = c_exp.act(|a| a.export(&dest));
-                            export_msg.set(Some(match r {
-                                Ok(rep) => {
-                                    understood.set(false);
-                                    let mut m = format!("Exported {} notes to {}.", rep.exported.len(), dest.display());
-                                    if !rep.failed.is_empty() {
-                                        m.push_str(&format!(" {} notes could not be read and were not exported.", rep.failed.len()));
-                                    }
-                                    (rep.failed.is_empty(), m)
-                                }
-                                Err(e) => (false, e.user_message()),
-                            }));
-                        },
-                        PathField { id: "export-dir", label: "Destination folder (new or empty)", value: export_dir, title: "Choose the export folder" }
-                        label { class: "check",
-                            input { r#type: "checkbox", checked: understood(), onchange: move |e| understood.set(e.checked()) }
-                            span { "I understand the exported files are not encrypted." }
-                        }
-                        if let Some((ok, m)) = export_msg() {
-                            p { class: if ok { "hint" } else { "error" }, role: if ok { "status" } else { "alert" }, "{m}" }
-                        }
-                        div { class: "actions", button { r#type: "submit", disabled: !understood(), "Export" } }
+                if crate::platform::ANDROID {
+                    section {
+                        h2 { "Export and import" }
+                        p { class: "hint", "Not available on Android yet: they need access to a folder outside the app, which this version does not request. Your notes stay encrypted in the app's private storage." }
                     }
-                }
-
-                section {
-                    h2 { "Import notes" }
-                    p { class: "hint", "Import every .md file in a folder (including subfolders). Existing notes are never overwritten." }
-                    form {
-                        onsubmit: move |e| {
-                            e.prevent_default();
-                            let src = PathBuf::from(import_dir.read().trim());
-                            if src.as_os_str().is_empty() {
-                                import_msg.set(Some((false, "Choose a folder to import.".into())));
-                                return;
+                } else {
+                    section {
+                        h2 { "Export notes" }
+                        p { class: "warning", "Export writes your notes as plain, unencrypted Markdown files. Anyone who can read that folder can read your notes, and locking the vault does not remove them. Choose a place you trust and delete the files when you are done." }
+                        form {
+                            onsubmit: move |e| {
+                                e.prevent_default();
+                                let dest = PathBuf::from(export_dir.read().trim());
+                                if dest.as_os_str().is_empty() {
+                                    export_msg.set(Some((false, "Choose a destination folder.".into())));
+                                    return;
+                                }
+                                let r = c_exp.act(|a| a.export(&dest));
+                                export_msg.set(Some(match r {
+                                    Ok(rep) => {
+                                        understood.set(false);
+                                        let mut m = format!("Exported {} notes to {}.", rep.exported.len(), dest.display());
+                                        if !rep.failed.is_empty() {
+                                            m.push_str(&format!(" {} notes could not be read and were not exported.", rep.failed.len()));
+                                        }
+                                        (rep.failed.is_empty(), m)
+                                    }
+                                    Err(e) => (false, e.user_message()),
+                                }));
+                            },
+                            PathField { id: "export-dir", label: "Destination folder (new or empty)", value: export_dir, title: "Choose the export folder" }
+                            label { class: "check",
+                                input { r#type: "checkbox", checked: understood(), onchange: move |e| understood.set(e.checked()) }
+                                span { "I understand the exported files are not encrypted." }
                             }
-                            let r = c_imp.act(|a| a.import(&src));
-                            import_msg.set(Some(match r {
-                                Ok(rep) => (
-                                    rep.conflicts.is_empty(),
-                                    format!(
-                                        "Imported {} notes; {} already present; {} id conflicts (imported as new notes); {} files skipped.",
-                                        rep.imported.len(),
-                                        rep.already_present.len(),
-                                        rep.conflicts.len(),
-                                        rep.skipped.len()
-                                    ),
-                                ),
-                                Err(e) => (false, e.user_message()),
-                            }));
-                        },
-                        PathField { id: "import-dir", label: "Folder to import", value: import_dir, title: "Choose the folder to import" }
-                        if let Some((ok, m)) = import_msg() {
-                            p { class: if ok { "hint" } else { "error" }, role: if ok { "status" } else { "alert" }, "{m}" }
+                            if let Some((ok, m)) = export_msg() {
+                                p { class: if ok { "hint" } else { "error" }, role: if ok { "status" } else { "alert" }, "{m}" }
+                            }
+                            div { class: "actions", button { r#type: "submit", disabled: !understood(), "Export" } }
                         }
-                        div { class: "actions", button { r#type: "submit", "Import" } }
+                    }
+
+                    section {
+                        h2 { "Import notes" }
+                        p { class: "hint", "Import every .md file in a folder (including subfolders). Existing notes are never overwritten." }
+                        form {
+                            onsubmit: move |e| {
+                                e.prevent_default();
+                                let src = PathBuf::from(import_dir.read().trim());
+                                if src.as_os_str().is_empty() {
+                                    import_msg.set(Some((false, "Choose a folder to import.".into())));
+                                    return;
+                                }
+                                let r = c_imp.act(|a| a.import(&src));
+                                import_msg.set(Some(match r {
+                                    Ok(rep) => (
+                                        rep.conflicts.is_empty(),
+                                        format!(
+                                            "Imported {} notes; {} already present; {} id conflicts (imported as new notes); {} files skipped.",
+                                            rep.imported.len(),
+                                            rep.already_present.len(),
+                                            rep.conflicts.len(),
+                                            rep.skipped.len()
+                                        ),
+                                    ),
+                                    Err(e) => (false, e.user_message()),
+                                }));
+                            },
+                            PathField { id: "import-dir", label: "Folder to import", value: import_dir, title: "Choose the folder to import" }
+                            if let Some((ok, m)) = import_msg() {
+                                p { class: if ok { "hint" } else { "error" }, role: if ok { "status" } else { "alert" }, "{m}" }
+                            }
+                            div { class: "actions", button { r#type: "submit", "Import" } }
+                        }
                     }
                 }
 

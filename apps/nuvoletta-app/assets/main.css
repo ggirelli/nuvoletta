@@ -182,13 +182,53 @@ label { display: block; font-weight: 600; margin: 12px 0 4px; }
 .links ul { list-style: none; padding: 0; margin: 0; }
 .links li { margin: 2px 0; }
 
+/* Wide screens: the mobile-only controls and wrappers disappear. */
+.notebar .back, .notebar .more-toggle { display: none; }
+.notebar .extra { display: contents; }
+
+/* Small screens: the note list and the open note take turns; the top bar wraps; the preview and
+   the editor take turns. */
 @media (max-width: 760px) {
-  .body { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
-  .sidebar { max-height: 30vh; border-right: none; border-bottom: 1px solid var(--nv-border); }
+  .topbar { flex-wrap: wrap; gap: 8px; padding: 8px; }
+  .topbar .mark, .topbar .spacer { display: none; }
+  .topbar .search { order: -1; flex: 1 0 100%; max-width: none; }
+  .topbar .status { min-width: 0; text-align: left; flex: 1 0 auto; }
+  .body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .body.show-list .workspace { display: none; }
+  .body:not(.show-list) .sidebar { display: none; }
+  .sidebar { border-right: none; padding: 8px 12px; }
+  .notebar { gap: 8px; padding: 8px; }
+  .notebar .back, .notebar .more-toggle { display: inline-block; }
+  .notebar label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .notebar .name { flex: 1 1 8em; width: auto; min-width: 0; }
+  .notebar .extra { display: none; flex: 1 0 100%; flex-wrap: wrap; gap: 8px; }
+  .notebar.more-open .extra { display: flex; }
+  .notebar .extra input { flex: 1 1 10em; width: auto; min-width: 0; }
   .panes { grid-template-columns: 1fr; }
   .panes .preview { display: none; }
   .panes.show-preview .editor { display: none; }
-  .panes.show-preview .preview { display: block; }
+  .panes.show-preview .preview { display: block; padding: 12px 16px; }
+  .links { max-height: 22vh; gap: 12px; }
+  /* With the soft keyboard up, give the editor all the room. */
+  .workspace:has(.cm-focused) .links, .workspace:has(.cm-focused) .notebar .extra { display: none; }
+  .screen { padding: 16px 12px; }
+  .card { padding: 20px 16px; }
+  .scrim { padding: 8px; }
+  .dialog { padding: 16px; }
+  .banner { flex-wrap: wrap; padding: 8px 12px; }
+}
+
+/* Touch screens: comfortable targets (about 44 px) and no zoom-on-focus (16 px inputs). */
+@media (pointer: coarse) {
+  button { min-height: 44px; padding: 8px 14px; }
+  button.link { min-height: 44px; padding: 8px; display: inline-flex; align-items: center; }
+  input[type="text"], input[type="password"], input[type="number"], input[type="search"] {
+    min-height: 44px; font-size: 16px; padding: 8px 12px;
+  }
+  .sidebar .tree-item > button.note { min-height: 44px; }
+  .tag button { min-height: 40px; padding: 6px 12px; }
+  .check input { width: 22px; height: 22px; margin-top: 2px; }
+  .links li { margin: 4px 0; }
 }
 
 /* Rendered Markdown (the preview). Only the classes the renderer emits (ADR 0003). */

@@ -1,0 +1,14 @@
+[application]
+name = "nuvoletta"
+# Replaces dx's generated manifest and activity; see the comments in each file.
+android_manifest = "android/AndroidManifest.xml"
+android_main_activity = "android/MainActivity.kt"
+
+[bundle]
+identifier = "dev.nuvoletta.app"
+publisher = "Nuvoletta"
+
+[android]
+min_sdk = 28
+target_sdk = 34
+compile_sdk = 34

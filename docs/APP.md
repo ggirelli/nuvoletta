@@ -1,7 +1,7 @@
-# Desktop app
+# Desktop and Android app
 
-The desktop app (`apps/nuvoletta-app`) is a [Dioxus](https://dioxuslabs.com/) application for Linux,
-macOS and Windows. It is a thin view over `crates/nuvoletta-app-core`, which holds all behaviour
+The app (`apps/nuvoletta-app`) is a [Dioxus](https://dioxuslabs.com/) application for Linux,
+macOS and Windows, and for Android (see [Android](#android)). It is a thin view over `crates/nuvoletta-app-core`, which holds all behaviour
 (session, autosave, auto-lock, search, export and import, sync scheduling and conflict handling) and
 is tested without a webview.
 
@@ -89,6 +89,33 @@ devices. Only encrypted files are written there. The protocol is in
    from what the last sync learned, and is unavailable while a sync cycle runs, while the vault is
    locked, without a sync folder, and while a device ID is reported as used twice. A clean-up that is
    interrupted is safe to repeat.
+
+## Android
+
+The same app builds for Android (minimum Android 9, API 28) with `just android`; see
+[Development](development.md) for the toolchain. **This version has been built but not yet run on a
+device**; the list of what needs testing is in [PLAN.md](plan.md) (Phase 6). The design is in
+[ADR 0006](ADR/0006-android-app.md).
+
+- **Storage.** The vault lives in the app's private storage, which other apps cannot read; there is no
+  folder to choose and no storage permission. It is excluded from Android backups. The first start
+  asks you to create the vault; later starts go straight to unlocking it.
+- **Permission.** The app declares only `INTERNET`, which Android requires for the local channel
+  between the app and its webview. It makes no network connections.
+- **Locking.** The vault is **saved and locked as soon as the app leaves the screen** (home, app
+  switcher, screen off, a call). Coming back asks for the passphrase. If the save fails, nothing is
+  locked or discarded and the app tells you when you return. The inactivity timer still applies
+  while the app is open.
+- **Screenshots.** Screenshots, screen recording and the recent-apps preview show nothing of the
+  app (`FLAG_SECURE`).
+- **Small screens.** The note list and the open note take turns (*‹ Notes* goes back), the top bar
+  wraps, *Details* shows folder, tags and delete, and *Preview* swaps the editor for the preview.
+- **Not available yet:** sync (Android needs a folder an external sync app can reach, which needs the
+  Storage Access Framework; see ADR 0006) and export and import (they need folder access). Until
+  sync exists an Android vault is stand-alone.
+- **Limits.** The webview holds plaintext as on desktop. Your keyboard app may learn what you type
+  in the editor (use a keyboard with an incognito mode if that matters), and the Android clipboard is
+  shared with other apps.
 
 ## Keyboard
 
