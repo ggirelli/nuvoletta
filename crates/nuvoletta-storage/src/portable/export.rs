@@ -62,8 +62,29 @@ pub struct ExportReport {
 /// [`Error::DestinationInsideVault`] if `dest` is within the vault, [`Error::DestinationNotEmpty`] if `dest` has content, [`Error::UnsafeEntry`] if it is a symlink
 /// or not a directory, or an I/O error while writing (files already written stay).
 pub fn export_markdown(vault: &Unlocked, dest: &Path) -> Result<ExportReport> {
-    if super::canonical_lenient(dest)?.starts_with(super::canonical_lenient(vault.root())?) {
+    export_markdown_avoiding(vault, dest, &[])
+}
+
+/// [`export_markdown`], additionally refusing a destination that lies inside or contains any of
+/// the `synced` folders (compared after resolving symlinks): a synchronised folder uploads
+/// whatever is written into it, so plaintext must never land there.
+///
+/// # Errors
+/// As [`export_markdown`], and [`Error::DestinationSynced`].
+pub fn export_markdown_avoiding(
+    vault: &Unlocked,
+    dest: &Path,
+    synced: &[&Path],
+) -> Result<ExportReport> {
+    let canon = super::canonical_lenient(dest)?;
+    if canon.starts_with(super::canonical_lenient(vault.root())?) {
         return Err(Error::DestinationInsideVault);
+    }
+    for folder in synced {
+        let folder = super::canonical_lenient(folder)?;
+        if canon.starts_with(&folder) || folder.starts_with(&canon) {
+            return Err(Error::DestinationSynced);
+        }
     }
     prepare_destination(dest)?;
     let summaries = vault.list();

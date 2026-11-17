@@ -10,7 +10,9 @@ use crate::tree::{TreeRow, build_tree};
 use nuvoletta_core::{Note, NoteId, NotePath, now_ms};
 use nuvoletta_crypto::{KdfParams, RecoveryKey};
 use nuvoletta_markdown::{Index, RenderOptions, TagCount, render_html};
-use nuvoletta_storage::portable::{ExportReport, ImportReport, export_markdown, import_markdown};
+use nuvoletta_storage::portable::{
+    ExportReport, ImportReport, export_markdown_avoiding, import_markdown,
+};
 use nuvoletta_storage::{Locked, NoteSummary, Unlocked};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -814,10 +816,17 @@ impl App {
     /// [`Error::Unsaved`]; destination errors from storage.
     pub fn export(&mut self, dest: &Path) -> Result<ExportReport> {
         let now = self.clock.now();
+        let synced = self.sync_cfg.folder.clone();
         let s = self.session_mut()?;
         s.flush(now)?;
         s.last_activity = now;
-        Ok(export_markdown(s.vault()?, dest)?)
+        // The synced folder is refused even while sync is switched off: it is still synced by
+        // the external tool, and plaintext must never be written into it.
+        Ok(export_markdown_avoiding(
+            s.vault()?,
+            dest,
+            synced.as_deref().as_slice(),
+        )?)
     }
 
     /// Import a folder of `.md` files, then rebuild the index.

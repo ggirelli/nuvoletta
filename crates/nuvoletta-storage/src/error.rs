@@ -36,6 +36,10 @@ pub enum Error {
     /// written into a vault (it may be synchronised).
     #[error("export destination is inside the vault directory")]
     DestinationInsideVault,
+    /// The export destination is a synchronised folder (or contains or lies inside one); the
+    /// plaintext would be uploaded.
+    #[error("export destination is inside or contains a synchronised folder")]
+    DestinationSynced,
     /// The import source contains the vault directory or lies inside it.
     #[error("import source overlaps the vault directory")]
     SourceOverlapsVault,

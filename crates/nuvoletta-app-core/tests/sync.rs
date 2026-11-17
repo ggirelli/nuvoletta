@@ -827,3 +827,43 @@ fn restore_with_missing_content_says_so_and_changes_nothing() {
     assert!(matches!(a.app.restore_note(id), Err(Error::Sync(_))));
     assert_eq!(a.app.recently_deleted().unwrap().len(), 1);
 }
+
+#[test]
+fn export_refuses_the_synced_folder_its_parents_and_children() {
+    let w = World::new();
+    let mut a = w.first("a");
+    a.write("T", "secret body");
+    assert!(a.app.export(&w.shared).is_err());
+    assert!(a.app.export(&w.shared.join("plain")).is_err());
+    assert!(a.app.export(w.tmp.path()).is_err());
+    // Still refused while sync is switched off: the folder is synced by an external tool.
+    a.app.set_sync_enabled(false).unwrap();
+    assert!(a.app.export(&w.shared.join("plain")).is_err());
+    assert!(!w.shared.join("plain").exists());
+    a.app.export(&w.tmp.path().join("elsewhere")).unwrap();
+}
+
+#[test]
+fn stored_notices_are_sealed_and_a_replaced_file_is_reported() {
+    let w = World::new();
+    let mut a = w.first("a");
+    let file = a.dir.join(".nuvoletta/device-state/sync-notices");
+    // Sealed from the first unlock on, and not readable as text.
+    assert!(file.exists());
+    assert!(a.app.sync_notices().is_empty());
+    let sealed = fs::read(&file).unwrap();
+    assert!(!sealed.windows(7).any(|w| w == b"notices"));
+
+    // A file that is not the sealed one (replaced, truncated, plaintext) is reported.
+    fs::write(&file, b"[]").unwrap();
+    a.app.lock(false).unwrap();
+    a.app.unlock_with_passphrase(PW).unwrap();
+    let n = a.app.sync_notices();
+    assert_eq!(n.len(), 1);
+    assert_eq!(n[0].code, "notices-lost");
+    // Acknowledging it re-seals a clean file.
+    a.app.acknowledge_sync_notice(0).unwrap();
+    a.app.lock(false).unwrap();
+    a.app.unlock_with_passphrase(PW).unwrap();
+    assert!(a.app.sync_notices().is_empty());
+}
