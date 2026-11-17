@@ -410,6 +410,36 @@ fn move_journal_aside(dir: &Path) -> Result<String> {
     Ok(name)
 }
 
+/// The highest MAC-verified vault header generation this device recorded (0 if none, or if the
+/// file is missing or does not authenticate under `keys`).
+#[must_use]
+pub fn verified_header_gen(dir: &Path, keys: &Subkeys) -> u32 {
+    load_file::<u32>(dir, keys, "verified-header-gen")
+        .ok()
+        .flatten()
+        .unwrap_or(0)
+}
+
+/// Refuse a header of a generation lower than the highest this device has verified (a replay of
+/// an old genuine header). The generation of the header the device holds is checked by the
+/// storage layer; this is the memory of what was seen on the provider.
+///
+/// # Errors
+/// [`nuvoletta_storage::Error::HeaderRefused`] with [`nuvoletta_storage::Refusal::Older`].
+pub fn ensure_not_rolled_back(dir: &Path, keys: &Subkeys, generation: u32) -> Result<()> {
+    let seen = verified_header_gen(dir, keys);
+    if generation < seen {
+        return Err(
+            nuvoletta_storage::Error::HeaderRefused(nuvoletta_storage::Refusal::Older {
+                local: seen,
+                candidate: generation,
+            })
+            .into(),
+        );
+    }
+    Ok(())
+}
+
 /// Record `generation` as a MAC-verified vault header generation in the sealed
 /// `verified-header-gen` file of the sync state in `dir`, if it is higher than what is stored
 /// (creating the directory if missing). A joining device calls this before its first sync, with
@@ -419,11 +449,7 @@ fn move_journal_aside(dir: &Path) -> Result<String> {
 /// I/O or crypto failures.
 pub fn record_verified_header_gen(dir: &Path, keys: &Subkeys, generation: u32) -> Result<()> {
     fs::create_dir_all(dir)?;
-    let known = load_file::<u32>(dir, keys, "verified-header-gen")
-        .ok()
-        .flatten()
-        .unwrap_or(0);
-    if generation > known {
+    if generation > verified_header_gen(dir, keys) {
         write_atomic(
             dir,
             "verified-header-gen",

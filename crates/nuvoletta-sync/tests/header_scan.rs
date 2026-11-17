@@ -124,3 +124,25 @@ fn the_fingerprint_is_the_vault_id_and_nothing_else() {
     assert_eq!(compact, expected);
     assert_eq!(fp.split(' ').count(), 8);
 }
+
+#[test]
+fn the_verified_generation_only_goes_up_and_older_headers_are_refused() {
+    use nuvoletta_sync::state::{
+        ensure_not_rolled_back, record_verified_header_gen, verified_header_gen,
+    };
+    let d = tempfile::tempdir().unwrap();
+    let state = d.path().join("sync-state");
+    let a = Vault::create("first vault passphrase", FAST).unwrap().vault;
+    let other = Vault::create("second vault passphrase", FAST)
+        .unwrap()
+        .vault;
+    assert_eq!(verified_header_gen(&state, a.keys()), 0);
+    ensure_not_rolled_back(&state, a.keys(), 1).unwrap();
+    record_verified_header_gen(&state, a.keys(), 5).unwrap();
+    record_verified_header_gen(&state, a.keys(), 3).unwrap();
+    assert_eq!(verified_header_gen(&state, a.keys()), 5);
+    ensure_not_rolled_back(&state, a.keys(), 5).unwrap();
+    ensure_not_rolled_back(&state, a.keys(), 6).unwrap();
+    assert!(ensure_not_rolled_back(&state, a.keys(), 4).is_err());
+    assert_eq!(verified_header_gen(&state, other.keys()), 0);
+}

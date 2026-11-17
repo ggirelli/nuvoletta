@@ -1,5 +1,6 @@
 //! Root component: screen selection, JS bridge handling, timers.
 
+use crate::adopt::AdoptDialog;
 use crate::assets;
 use crate::bridge;
 use crate::core::Core;
@@ -45,6 +46,7 @@ pub fn Root() -> Element {
         conflict: Signal::new(None),
         trash: Signal::new(false),
         join: Signal::new(false),
+        adopt: Signal::new(false),
         clock_ms: Signal::new(crate::sync::wall_ms()),
     });
 
@@ -159,6 +161,7 @@ pub fn Root() -> Element {
     let must_change = core.read(nuvoletta_app_core::App::must_change_passphrase);
     let joining = core.read(nuvoletta_app_core::App::join_in_progress);
     let join_screen = *ui.join.read();
+    let adopt_open = *ui.adopt.read();
     let key_pending = ui.recovery_key.read().is_some();
     let settings_open = *ui.settings.read();
     let sync_open = *ui.sync.read();
@@ -195,7 +198,9 @@ pub fn Root() -> Element {
                 Phase::NoVault => rsx! {
                     if join_screen { JoinScreen {} } else { Picker {} }
                 },
-                Phase::Locked => rsx! { Unlock {} },
+                Phase::Locked => rsx! {
+                    if adopt_open { AdoptDialog { locked: true } } else { Unlock {} }
+                },
                 Phase::Unlocked => rsx! {
                     if joining {
                         JoinProgress {}
@@ -211,6 +216,7 @@ pub fn Root() -> Element {
                         }
                         if settings_open { Settings {} }
                         if sync_open { SyncDialog {} }
+                        if adopt_open { AdoptDialog { locked: false } }
                         if *ui.trash.read() { TrashDialog {} }
                     }
                 },

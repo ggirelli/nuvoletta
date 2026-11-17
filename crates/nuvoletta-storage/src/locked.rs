@@ -80,6 +80,10 @@ impl Locked {
         Ok(Self { root, header, lock })
     }
 
+    pub(crate) fn set_header(&mut self, header: VaultHeader) {
+        self.header = header;
+    }
+
     pub(crate) fn from_parts(root: PathBuf, header: VaultHeader, lock: VaultLock) -> Self {
         Self { root, header, lock }
     }

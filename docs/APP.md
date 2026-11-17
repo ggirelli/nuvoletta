@@ -71,6 +71,37 @@ anything by hand (`docs/ADR/0008-device-join-and-header-adoption.md`). On the fi
    while it holds no notes (none in `notes/`, none in the local trash); otherwise the directory is
    left in place and its path is shown.
 
+## Using a new passphrase on another device
+
+After the passphrase or recovery key is changed on one device, the others see the warning "The
+passphrase or recovery key was changed elsewhere" (a header file of this vault that authenticates
+under this vault's keys). The warning has a **Use the new passphrase** button
+(`docs/ADR/0008-device-join-and-header-adoption.md`, part C); a lost race (two devices changed it
+at once) has its own warning, "The passphrase was changed on two devices at the same time", with the
+same button. The dialog lists `h/` of the sync location, keeps the headers of this vault that are not
+older than the one held here, and asks for the new passphrase or recovery key.
+
+- **Checks, in order.** Same vault id; generation not lower than the one held here; the typed secret
+  opens it (KDF parameters range-checked, wrap, header MAC); on an unlocked device the unwrapped DEK
+  equals the one in memory (constant-time comparison of derived keys); a generation lower than the
+  highest MAC-verified one recorded on this device (`verified-header-gen`) is a rollback and is
+  refused, whatever the file name says. Nothing is written before all of them passed.
+- **Weaker KDF.** A header with lower memory, passes or lanes than the one held here, or than a new
+  vault uses (64 MiB, t 3, p 1), is shown with the numbers and needs an explicit confirmation. On
+  Android a passphrase header above 256 MiB or t 8 is refused with a message (the recovery key still
+  works).
+- **Diverging headers.** Of two different headers of the generation, the one the secret opens is
+  adopted and a warning (also kept as a sync notice) names the other. Nothing is chosen silently.
+- **Locked devices** (never unlocked since the change): the unlock screen has "Passphrase changed on
+  another device?". The candidate is opened with the typed secret and its keys must open existing
+  sealed local data (a note, or a `K_local` state file) before the header is replaced; with nothing
+  to open the header is refused. A locked folder-synced device reads its saved folder; a locked
+  WebDAV device asks for the address and account again.
+- **Stored.** The header file is replaced atomically (a crash leaves the old or the new one, and both
+  open the vault with their own passphrase), the verified generation is recorded, and the notices
+  about the newer header are cleared. The data key is unchanged, so no other file is re-sealed and
+  the session keeps its keys.
+
 ## WebDAV sync
 
 The *Sync* dialog has a *WebDAV* section (the only sync option on Android). Enter the folder address
@@ -128,7 +159,7 @@ devices. Only encrypted files are written there. The protocol is in
    deleted the note, choose *Keep the note* or *Delete the note*. Every choice keeps the other
    versions in the sync history, so nothing is lost.
 7. **Integrity warnings** (the folder went back in time, a device ID was used twice, entries may be
-   withheld or corrupted, a newer vault header exists) are shown prominently with what they mean and
+   withheld or corrupted, a newer vault header exists, with a button to use it) are shown prominently with what they mean and
    what to do. They are stored on this device and stay, across cycles and restarts, until you press
    *Acknowledge*; the app never dismisses them on its own and never changes data because of them.
 8. **Diagnostics.** The *Sync* dialog lists files in the sync folder that are not Nuvoletta files

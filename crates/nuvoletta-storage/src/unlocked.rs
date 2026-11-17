@@ -88,6 +88,13 @@ impl Unlocked {
         Ok(u)
     }
 
+    /// Replace the header on disk and in the session with one for the same keys.
+    pub(crate) fn replace_header(&mut self, vault: Vault) -> Result<()> {
+        self.write_header(vault.header())?;
+        self.vault = vault;
+        Ok(())
+    }
+
     /// Lock the vault: keys and the index are dropped (zeroized).
     #[must_use]
     pub fn lock(self) -> Locked {

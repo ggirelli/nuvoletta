@@ -5,6 +5,7 @@
 mod common;
 
 use common::*;
+use nuvoletta_crypto::KdfParams;
 use nuvoletta_sync::log::{Entry, KIND_CHECKPOINT, SeenPos, seal_segment};
 use nuvoletta_sync::{Hash32, Id16, Warning};
 use std::collections::BTreeMap;
@@ -239,6 +240,48 @@ fn junk_on_the_local_generation_name_is_not_taken_as_the_published_header() {
             .any(|x| matches!(x, Warning::HeaderInvalid { generation: 1 })),
         "{:?}",
         r.warnings
+    );
+}
+
+/// ADR 0008, O6: two devices change the passphrase at once. The second to publish finds the
+/// name of its generation taken by a header that authenticates under the same keys but has
+/// different bytes. That is reported as a divergence (not as an invalid file), it is not counted
+/// as a newer generation, and nothing is overwritten.
+#[test]
+fn a_lost_race_on_the_header_name_is_reported_as_diverged_not_invalid() {
+    let mut w = World::new();
+    let mut a = w.first("a");
+    a.sync();
+    let mut b = w.join("b", &a);
+    a.vault
+        .change_passphrase("passphrase set on device a", KdfParams::MIN_ACCEPTED)
+        .unwrap();
+    b.vault
+        .change_passphrase("passphrase set on device b", KdfParams::MIN_ACCEPTED)
+        .unwrap();
+    assert_eq!(a.vault.header().generation(), b.vault.header().generation());
+    a.sync();
+    let winner = std::fs::read(w.remote.join("h/00000002.nvhdr")).unwrap();
+    let r = b.sync();
+    assert!(
+        r.warnings
+            .iter()
+            .any(|x| matches!(x, Warning::HeaderDiverged { generation: 2 })),
+        "{:?}",
+        r.warnings
+    );
+    assert!(
+        !r.warnings.iter().any(|x| matches!(
+            x,
+            Warning::HeaderInvalid { .. } | Warning::HeaderNewer { .. }
+        )),
+        "{:?}",
+        r.warnings
+    );
+    // The winner's file was not touched.
+    assert_eq!(
+        std::fs::read(w.remote.join("h/00000002.nvhdr")).unwrap(),
+        winner
     );
 }
 

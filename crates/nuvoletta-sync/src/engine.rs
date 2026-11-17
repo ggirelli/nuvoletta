@@ -130,6 +130,14 @@ pub enum Warning {
         /// Remote generation.
         generation: u32,
     },
+    /// A remote header file of this vault, of the generation this device holds, authenticates
+    /// under this vault's keys but has different bytes: another device changed the passphrase
+    /// at the same moment and its file won the name. Both are genuine; this device adopts the
+    /// other one with the new passphrase and changes again from there.
+    HeaderDiverged {
+        /// The generation both headers carry.
+        generation: u32,
+    },
     /// The highest remote header generation is lower than one seen before.
     HeaderRollback {
         /// Highest generation seen before.

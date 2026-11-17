@@ -40,6 +40,8 @@ pub struct Ui {
     pub sync: Signal<bool>,
     /// Conflicting note being reviewed inside the sync dialog.
     pub conflict: Signal<Option<nuvoletta_core::NoteId>>,
+    /// The "use the new passphrase" screens are shown.
+    pub adopt: Signal<bool>,
     /// The join screens are shown instead of the picker.
     pub join: Signal<bool>,
     /// Recently deleted dialog visible.
@@ -73,6 +75,7 @@ impl Ui {
         self.settings.set(false);
         self.sync.set(false);
         self.trash.set(false);
+        self.adopt.set(false);
         self.conflict.set(None);
         self.confirm_delete.set(None);
         self.recovery_key.set(None);

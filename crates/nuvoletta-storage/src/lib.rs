@@ -18,7 +18,7 @@ pub mod trash;
 pub mod unlocked;
 
 pub use error::{Error, Result};
-pub use header_change::{Cleanup, Secret, remove_unused_vault};
+pub use header_change::{Cleanup, Refusal, Secret, VerifiedHeader, remove_unused_vault};
 pub use locked::Locked;
 pub use trash::TrashedNote;
 pub use unlocked::{Issue, IssueKind, NoteSummary, Unlocked};

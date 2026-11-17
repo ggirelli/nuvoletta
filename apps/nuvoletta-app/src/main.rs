@@ -3,6 +3,7 @@
 //! All behaviour (session, autosave, auto-lock, queries) lives in `nuvoletta-app-core`; this
 //! crate renders it, forwards input, and runs the JS bridge to the vendored CodeMirror editor.
 
+mod adopt;
 mod assets;
 mod bridge;
 mod core;

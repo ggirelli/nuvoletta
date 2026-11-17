@@ -49,7 +49,7 @@ use std::time::Duration;
 mod trash;
 pub use trash::DeletedItem;
 
-type BoxProvider = Box<dyn Provider + Send>;
+pub(crate) type BoxProvider = Box<dyn Provider + Send>;
 type BoxSyncer = Syncer<BoxProvider>;
 
 const NOTICES_FILE: &str = "sync-notices";
@@ -138,7 +138,7 @@ pub(crate) struct SyncSession {
     /// A lock was requested during a cycle; the flag is `force`.
     pub(crate) lock_after: Option<bool>,
     snapshot: Snapshot,
-    notices: Vec<SyncNotice>,
+    pub(crate) notices: Vec<SyncNotice>,
     problem: Option<SyncProblem>,
     last_synced_ms: Option<i64>,
     /// The WebDAV credentials of this device, opened from the sealed device state at unlock.
@@ -152,12 +152,12 @@ pub(crate) struct SyncSession {
     last_started: Option<Duration>,
 }
 
-fn open_syncer(
-    vault: &Unlocked,
+/// The provider the settings describe (`Offline` when sync is off or not set up).
+pub(crate) fn provider_for(
     settings: &SyncSettings,
     webdav: Option<&nuvoletta_webdav::WebDavConfig>,
-) -> std::result::Result<Box<BoxSyncer>, nuvoletta_sync::Error> {
-    let provider: BoxProvider = match settings.backend {
+) -> BoxProvider {
+    match settings.backend {
         // The WebDAV provider checks the account (read and create, no delete, no overwrite)
         // before its first operation of this session and refuses everything otherwise.
         SyncBackend::WebDav => match webdav {
@@ -174,8 +174,15 @@ fn open_syncer(
             },
             _ => Box::new(Offline),
         },
-    };
-    Syncer::open(vault, provider).map(Box::new)
+    }
+}
+
+fn open_syncer(
+    vault: &Unlocked,
+    settings: &SyncSettings,
+    webdav: Option<&nuvoletta_webdav::WebDavConfig>,
+) -> std::result::Result<Box<BoxSyncer>, nuvoletta_sync::Error> {
+    Syncer::open(vault, provider_for(settings, webdav)).map(Box::new)
 }
 
 /// Kind tag inside the sealed notices file, so another sealed local file cannot stand in for it.
@@ -254,7 +261,7 @@ fn load_legacy_notices(dir: &Path) -> Vec<SyncNotice> {
         .unwrap_or_default()
 }
 
-fn save_notices(root: &Path, keys: &Subkeys, notices: &[SyncNotice]) -> Result<()> {
+pub(crate) fn save_notices(root: &Path, keys: &Subkeys, notices: &[SyncNotice]) -> Result<()> {
     let v: Vec<_> = notices
         .iter()
         .map(|n| {
@@ -272,7 +279,7 @@ fn save_notices(root: &Path, keys: &Subkeys, notices: &[SyncNotice]) -> Result<(
 }
 
 /// Add a notice unless the same one is already shown. Returns whether it was new.
-fn add_notice(list: &mut Vec<SyncNotice>, n: SyncNotice) -> bool {
+pub(crate) fn add_notice(list: &mut Vec<SyncNotice>, n: SyncNotice) -> bool {
     if list
         .iter()
         .any(|o| o.code == n.code && o.detail == n.detail)
