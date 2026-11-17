@@ -83,6 +83,21 @@ fn verify_mac_authenticates_headers_of_the_same_vault_only() {
 }
 
 #[test]
+fn same_keys_tells_one_dek_from_another_after_a_passphrase_change() {
+    let a = created();
+    let changed = a
+        .vault
+        .change_passphrase("another passphrase entirely", FAST)
+        .unwrap();
+    let reopened = changed
+        .unlock_with_passphrase("another passphrase entirely")
+        .unwrap();
+    assert!(a.vault.keys().same_keys(reopened.keys()));
+    let other = Vault::create(PW, FAST).unwrap();
+    assert!(!a.vault.keys().same_keys(other.vault.keys()));
+}
+
+#[test]
 fn wrong_passphrase_is_generic_unlock_error() {
     let c = created();
     let err = c

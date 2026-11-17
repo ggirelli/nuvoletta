@@ -27,6 +27,7 @@ Goal: converge devices through a "dumb" shared store (externally synced folder f
 **Decided:** `o/` is sharded by first byte (256 directories) to keep listings small on WebDAV/NAS and mobile sync tools.
 - Temporary upload names start with `.tmp-` and are never read by peers; the writer renames to the final name after a complete write (folder backend). On WebDAV use `PUT` to a tmp name then `MOVE`, or `If-None-Match: *` when supported.
 - Header rewrite (passphrase change) creates `h/<gen+1>.nvhdr`; devices use the highest valid generation; the writer may delete older generations after a grace period.
+- A device that has no vault yet (joining) lists only `h/` and reads header-sized files (`scan_headers` in `nuvoletta-sync`); a file's name proves nothing, the parsed generation counts, and a header is used only after the user's secret opened it (ADR 0008). No log, object or note is read before the vault is unlocked.
 - Only names matching the strict grammar `^[0-9a-f]{N}\.(nvhdr|nvlog|nvobj|nvsnap)$` are protocol files; see section 8 for the rest.
 
 ## 3. Identities

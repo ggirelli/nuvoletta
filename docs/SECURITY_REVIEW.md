@@ -57,5 +57,5 @@ written down), **deferred** (not done; reason given).
 
 Everything in the review's "limits" section still applies: not every line was read with equal
 care, no real-world server, sync-tool or device testing, dependencies assumed correct, memory
-residue not measured. Adopting a newer vault header and in-app device join are separate, unapproved
-follow-ups and are not part of these fixes.
+residue not measured. In-app device join and header adoption (ADR 0008) were added after this review
+and have not had a review of their own.

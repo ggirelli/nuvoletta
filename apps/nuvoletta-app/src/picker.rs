@@ -114,6 +114,15 @@ pub fn Picker() -> Element {
                 div { class: "tabs", role: "group", "aria-label": "What do you want to do?",
                     button { r#type: "button", "aria-pressed": "{!creating()}", onclick: move |_| creating.set(false), "Open a vault" }
                     button { r#type: "button", "aria-pressed": "{creating()}", onclick: move |_| creating.set(true), "Create a vault" }
+                    button {
+                        r#type: "button",
+                        "aria-pressed": "false",
+                        onclick: move |_| {
+                            let mut j = ui.join;
+                            j.set(true);
+                        },
+                        "Join an existing vault"
+                    }
                 }
                 if crate::platform::ANDROID {
                     p { class: "hint", "The vault is stored in this app's private storage, which other apps cannot read." }

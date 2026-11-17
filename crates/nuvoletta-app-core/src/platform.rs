@@ -14,6 +14,59 @@ pub const ANDROID_FOLDER_SYNC_UNAVAILABLE: &str = "On Android, sync uses WebDAV 
      Framework; that is not implemented. Your notes stay encrypted in the app's private storage \
      on this device.";
 
+/// The most Argon2id work a device accepts when it unlocks a header it has just been given
+/// (joining a vault, adopting a newer header; ADR 0008, O5). The format allows up to 1 GiB and
+/// `t` = 16 so that a parser can refuse nonsense before running Argon2; a phone may not manage
+/// that, and a failed allocation after the user typed a passphrase is a poor way to find out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KdfLimit {
+    /// Largest memory cost accepted, in KiB.
+    pub max_m_kib: u32,
+    /// Largest number of passes accepted.
+    pub max_t: u32,
+}
+
+impl KdfLimit {
+    /// Android: refuse memory above 256 MiB or more than 8 passes.
+    pub const ANDROID: Self = Self {
+        max_m_kib: 256 * 1024,
+        max_t: 8,
+    };
+    /// Desktop: everything the format allows.
+    pub const FORMAT: Self = Self {
+        max_m_kib: u32::MAX,
+        max_t: u32::MAX,
+    };
+
+    /// The limit of the platform this build runs on.
+    #[must_use]
+    pub const fn platform() -> Self {
+        if cfg!(target_os = "android") {
+            Self::ANDROID
+        } else {
+            Self::FORMAT
+        }
+    }
+
+    /// `Err` with a message for the user if `params` exceed the limit.
+    ///
+    /// # Errors
+    /// The explanation, in words.
+    pub fn check(&self, params: &nuvoletta_crypto::KdfParams) -> Result<(), String> {
+        if params.m_kib <= self.max_m_kib && params.t <= self.max_t {
+            return Ok(());
+        }
+        Err(format!(
+            "This vault's passphrase protection needs {} MiB of memory and {} passes, more than this device accepts \
+             ({} MiB and {} passes). Change the passphrase on a computer (that sets the standard cost) and try again.",
+            params.m_kib / 1024,
+            params.t,
+            self.max_m_kib / 1024,
+            self.max_t
+        ))
+    }
+}
+
 /// Android multi-user: user `n` owns uids `n * 100_000 ..`.
 const ANDROID_UID_PER_USER: u32 = 100_000;
 
@@ -94,6 +147,18 @@ mod tests {
         ] {
             assert_eq!(package_from_cmdline(bad), None, "{bad:?}");
         }
+    }
+
+    #[test]
+    fn kdf_limit_refuses_only_above_the_android_bounds() {
+        use nuvoletta_crypto::KdfParams;
+        let p = |m_kib, t| KdfParams { m_kib, t, p: 1 };
+        assert!(KdfLimit::ANDROID.check(&p(262_144, 8)).is_ok());
+        assert!(KdfLimit::ANDROID.check(&KdfParams::DEFAULT).is_ok());
+        let memory = KdfLimit::ANDROID.check(&p(262_145, 3)).unwrap_err();
+        assert!(memory.contains("256 MiB"), "{memory}");
+        assert!(KdfLimit::ANDROID.check(&p(65_536, 9)).is_err());
+        assert!(KdfLimit::FORMAT.check(&p(1_048_576, 16)).is_ok());
     }
 
     #[test]

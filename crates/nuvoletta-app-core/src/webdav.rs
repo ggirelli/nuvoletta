@@ -89,7 +89,7 @@ pub enum WebDavEvent {
     },
 }
 
-enum CheckResult {
+pub(crate) enum CheckResult {
     Safe,
     Refused(Refusal),
     NeedsPin { fp: [u8; 32], reason: String },
@@ -97,15 +97,15 @@ enum CheckResult {
 }
 
 pub(crate) struct CheckOutcome {
-    cfg: WebDavConfig,
-    result: CheckResult,
+    pub(crate) cfg: WebDavConfig,
+    pub(crate) result: CheckResult,
 }
 
-fn config_error(e: &ConfigError) -> Error {
+pub(crate) fn config_error(e: &ConfigError) -> Error {
     Error::Input(e.to_string())
 }
 
-fn run_check(cfg: WebDavConfig) -> CheckOutcome {
+pub(crate) fn run_check(cfg: WebDavConfig) -> CheckOutcome {
     let provider = WebDavProvider::new(cfg.clone(), Options::default());
     let result = match provider.verify() {
         Ok(Verdict::Safe { .. }) => CheckResult::Safe,
@@ -124,7 +124,7 @@ fn run_check(cfg: WebDavConfig) -> CheckOutcome {
 }
 
 /// What a failed request means for the user: what went wrong and what to do.
-fn describe_dav_error(e: &DavError) -> (String, String) {
+pub(crate) fn describe_dav_error(e: &DavError) -> (String, String) {
     let (m, h): (String, &str) = match e {
         DavError::Auth => (
             "The server rejected the user name or password.".to_owned(),
@@ -172,6 +172,21 @@ fn describe_dav_error(e: &DavError) -> (String, String) {
         ),
     };
     (m, h.to_owned())
+}
+
+/// The connection settings a form describes.
+pub(crate) fn config_from_input(input: &WebDavInput) -> Result<WebDavConfig> {
+    let pin = match input
+        .pin
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
+        Some(p) => Some(parse_fingerprint(p).map_err(|e| config_error(&e))?),
+        None => None,
+    };
+    WebDavConfig::new(&input.url, input.username.trim(), &input.password, pin)
+        .map_err(|e| config_error(&e))
 }
 
 // ---- sealed storage -----------------------------------------------------------------------
@@ -267,17 +282,7 @@ impl App {
     /// [`Error::Input`] for an unusable address, user name, password or fingerprint (with an
     /// explanation), [`Error::SyncBusy`] if a check is already running or the vault is away.
     pub fn webdav_check_start(&mut self, input: &WebDavInput) -> Result<()> {
-        let pin = match input
-            .pin
-            .as_deref()
-            .map(str::trim)
-            .filter(|p| !p.is_empty())
-        {
-            Some(p) => Some(parse_fingerprint(p).map_err(|e| config_error(&e))?),
-            None => None,
-        };
-        let cfg = WebDavConfig::new(&input.url, input.username.trim(), &input.password, pin)
-            .map_err(|e| config_error(&e))?;
+        let cfg = config_from_input(input)?;
         let s = self.session_mut()?;
         if s.sync.webdav_job.is_some() || s.sync.webdav_done.is_some() || s.vault.is_none() {
             return Err(Error::SyncBusy);

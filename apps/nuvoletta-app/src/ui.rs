@@ -40,6 +40,8 @@ pub struct Ui {
     pub sync: Signal<bool>,
     /// Conflicting note being reviewed inside the sync dialog.
     pub conflict: Signal<Option<nuvoletta_core::NoteId>>,
+    /// The join screens are shown instead of the picker.
+    pub join: Signal<bool>,
     /// Recently deleted dialog visible.
     pub trash: Signal<bool>,
     /// Wall-clock time (ms), refreshed periodically so relative times stay current.

@@ -8,6 +8,7 @@ mod bridge;
 mod core;
 mod dialogs;
 mod editor;
+mod join;
 mod picker;
 mod platform;
 mod root;

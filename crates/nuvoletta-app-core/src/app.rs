@@ -2,6 +2,8 @@
 
 use crate::clock::Clock;
 use crate::error::{Error, Result};
+use crate::join::{JoinState, Joining};
+use crate::platform::KdfLimit;
 use crate::settings::Settings;
 use crate::sync::{SyncSession, SyncTiming};
 use crate::sync_settings::SyncSettings;
@@ -142,6 +144,8 @@ pub(crate) struct Session {
     /// Set after a recovery-key unlock: the user must choose a new passphrase.
     pub(crate) must_change_passphrase: bool,
     pub(crate) sync: SyncSession,
+    /// A join whose first sync has not succeeded yet (see `join.rs`).
+    pub(crate) joining: Option<Joining>,
 }
 
 pub(crate) enum State {
@@ -154,8 +158,10 @@ pub(crate) enum State {
 /// saving, navigating and locking. See the crate documentation.
 pub struct App {
     clock: Arc<dyn Clock>,
-    settings: Settings,
+    pub(crate) settings: Settings,
     kdf: KdfParams,
+    pub(crate) kdf_limit: KdfLimit,
+    pub(crate) join: Option<JoinState>,
     debounce: Duration,
     pub(crate) state: State,
     pub(crate) sync_cfg: SyncSettings,
@@ -170,6 +176,8 @@ impl App {
             clock,
             settings,
             kdf: KdfParams::DEFAULT,
+            kdf_limit: KdfLimit::platform(),
+            join: None,
             debounce: DEFAULT_AUTOSAVE_DEBOUNCE,
             state: State::NoVault,
             sync_cfg: SyncSettings::default(),
@@ -181,6 +189,12 @@ impl App {
     /// the default is the production setting.
     pub fn set_kdf_params(&mut self, kdf: KdfParams) {
         self.kdf = kdf;
+    }
+
+    /// Change the Argon2id cost limit applied to headers taken from a sync location (tests, and
+    /// the platform default otherwise).
+    pub fn set_kdf_limit(&mut self, limit: KdfLimit) {
+        self.kdf_limit = limit;
     }
 
     /// Change the autosave debounce.
@@ -240,7 +254,7 @@ impl App {
         }
     }
 
-    fn not_unlocked(&self) -> Result<()> {
+    pub(crate) fn not_unlocked(&self) -> Result<()> {
         if matches!(self.state, State::Unlocked(_)) {
             Err(Error::AlreadyUnlocked)
         } else {
@@ -305,14 +319,14 @@ impl App {
         self.install(vault, true)
     }
 
-    fn wrong_state(&self) -> Error {
+    pub(crate) fn wrong_state(&self) -> Error {
         match self.state {
             State::NoVault => Error::NoVault,
             _ => Error::AlreadyUnlocked,
         }
     }
 
-    fn install(&mut self, vault: Unlocked, must_change: bool) -> Result<()> {
+    pub(crate) fn install(&mut self, vault: Unlocked, must_change: bool) -> Result<()> {
         let mut session = Session {
             root: vault.root().to_path_buf(),
             vault: Some(vault),
@@ -322,6 +336,7 @@ impl App {
             last_activity: self.clock.now(),
             must_change_passphrase: must_change,
             sync: SyncSession::default(),
+            joining: None,
         };
         session.rebuild_index();
         self.state = State::Unlocked(Box::new(session));

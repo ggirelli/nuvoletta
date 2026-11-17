@@ -17,6 +17,7 @@ mod clock;
 mod csp;
 mod diff;
 mod error;
+mod join;
 mod lifecycle;
 mod links;
 mod platform;
@@ -36,10 +37,11 @@ pub use clock::{Clock, ManualClock, SystemClock};
 pub use csp::CONTENT_SECURITY_POLICY;
 pub use diff::{DiffKind, DiffLine, diff_lines};
 pub use error::{Error, Result};
+pub use join::{JoinCancel, JoinCandidate, JoinPreview, JoinSearchEvent, JoinSecret, JoinSource};
 pub use lifecycle::BackgroundOutcome;
 pub use links::{LinkAction, classify_link};
 pub use platform::{
-    ANDROID_APP_ID, ANDROID_FOLDER_SYNC_UNAVAILABLE, AndroidPaths, android_files_dir,
+    ANDROID_APP_ID, ANDROID_FOLDER_SYNC_UNAVAILABLE, AndroidPaths, KdfLimit, android_files_dir,
     package_from_cmdline,
 };
 pub use settings::{DEFAULT_AUTO_LOCK_MINUTES, MAX_AUTO_LOCK_MINUTES, Settings, parse_tags};

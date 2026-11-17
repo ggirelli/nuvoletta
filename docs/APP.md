@@ -18,7 +18,7 @@ bundle, brand images) is compiled into the binary; there are no files to install
 
 ## Using it
 
-1. **Pick a vault.** Create a new vault in an empty folder, or open an existing one. The folder can
+1. **Pick a vault.** Create a new vault in an empty folder, open an existing one, or [join](#joining-an-existing-vault) one that is already synced from another device. The folder can
    be typed or chosen with *Browse…* (which needs a desktop file dialog; the text field always works).
 2. **Write down the recovery key.** A new vault shows its recovery key once. It is the only way in
    if the passphrase is lost, and nobody can recover it. The app does not continue until you confirm
@@ -32,6 +32,44 @@ bundle, brand images) is compiled into the binary; there are no files to install
 5. **Link and find.** `[[Another note]]` links notes; clicking a link in the preview opens the note.
    The panel under the editor lists backlinks and unresolved links; the sidebar lists tags; the search
    box finds text in titles, paths, tags and bodies.
+
+## Joining an existing vault
+
+A new device, or one restored with no vault, joins from the sync location instead of copying
+anything by hand (`docs/ADR/0008-device-join-and-header-adoption.md`). On the first screen choose
+*Join an existing vault*:
+
+1. **Sync location.** A synced folder (desktop) or a WebDAV address, user name and password
+   (desktop and Android). A WebDAV account goes through the usual check first and is refused if it
+   can delete or overwrite. Only the `h/` folder is listed and only header-sized files are read;
+   no log, object or note is read before the vault is unlocked, and nothing is written.
+2. **Vault.** If the location holds headers of more than one vault (a shared folder, or a file
+   someone added), the vault fingerprint (the vault id in groups of four hex digits) tells them
+   apart; compare it with *Settings, This vault* on a device that has the vault.
+3. **Passphrase or recovery key.** Type the passphrase of the **current** header, or the recovery
+   key. The header is opened in memory: KDF parameters range-checked, the data key unwrapped, the
+   header MAC verified. A header whose name, size or content is wrong, or that your secret does not
+   open, is never used, and the error is the same generic one as for a wrong passphrase. Only the
+   newest generation is tried; a header that does not open is not silently replaced by an older
+   one. If the newest does not open, the user may allow an older header explicitly (the screen
+   warns that the passphrase typed is then not the current one). If the folder holds two different
+   headers of the same generation, the one the secret opens is used and a warning names the other.
+   On Android a header that asks for more than 256 MiB of memory or more than 8 passes is refused
+   for a passphrase with a clear message (the recovery key does not run Argon2 and still works,
+   and the forced new passphrase after the first sync has the standard cost); the desktop accepts
+   everything the format allows.
+4. **Confirm.** The screen shows the fingerprint and the header generation. A lower generation than
+   on your other device means the location offers an older passphrase setting (a provider can serve
+   any genuine old header; nothing in the logs records the generation, so a new device cannot
+   detect it, see the threat model T7). Only now is the vault created: the header bytes that
+   verified, an empty `notes/`, the sync location (the WebDAV credentials sealed with the vault's
+   local key) and the verified generation.
+5. **First sync.** A join screen shows progress. It ends when a cycle succeeds, and the vault then
+   opens like any other. A join with the **recovery key** asks for a new passphrase only after
+   that first sync (the device has published nothing before it has synced). If the first sync
+   fails, *Try again* repeats it and *Cancel the join* removes the new vault directory, but only
+   while it holds no notes (none in `notes/`, none in the local trash); otherwise the directory is
+   left in place and its path is shown.
 
 ## WebDAV sync
 
