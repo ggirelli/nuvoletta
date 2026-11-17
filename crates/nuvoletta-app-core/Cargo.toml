@@ -11,16 +11,16 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-nuvoletta-core = { path = "../nuvoletta-core", version = "0.0.0" }
-nuvoletta-crypto = { path = "../nuvoletta-crypto", version = "0.0.0" }
-nuvoletta-markdown = { path = "../nuvoletta-markdown", version = "0.0.0" }
-nuvoletta-storage = { path = "../nuvoletta-storage", version = "0.0.0" }
-nuvoletta-sync = { path = "../nuvoletta-sync", version = "0.0.0" }
-nuvoletta-webdav = { path = "../nuvoletta-webdav", version = "0.0.0" }
+nuvoletta-core = { path = "../nuvoletta-core", version = "0.1.0-rc.1" }
+nuvoletta-crypto = { path = "../nuvoletta-crypto", version = "0.1.0-rc.1" }
+nuvoletta-markdown = { path = "../nuvoletta-markdown", version = "0.1.0-rc.1" }
+nuvoletta-storage = { path = "../nuvoletta-storage", version = "0.1.0-rc.1" }
+nuvoletta-sync = { path = "../nuvoletta-sync", version = "0.1.0-rc.1" }
+nuvoletta-webdav = { path = "../nuvoletta-webdav", version = "0.1.0-rc.1" }
 serde_json.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
-nuvoletta-webdav = { path = "../nuvoletta-webdav", version = "0.0.0", features = ["test-server"] }
+nuvoletta-webdav = { path = "../nuvoletta-webdav", version = "0.1.0-rc.1", features = ["test-server"] }
 tempfile = "3"

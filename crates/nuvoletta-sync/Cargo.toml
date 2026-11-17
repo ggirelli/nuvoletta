@@ -13,9 +13,9 @@ workspace = true
 [dependencies]
 getrandom.workspace = true
 minicbor.workspace = true
-nuvoletta-core = { path = "../nuvoletta-core", version = "0.0.0" }
-nuvoletta-crypto = { path = "../nuvoletta-crypto", version = "0.0.0" }
-nuvoletta-storage = { path = "../nuvoletta-storage", version = "0.0.0" }
+nuvoletta-core = { path = "../nuvoletta-core", version = "0.1.0-rc.1" }
+nuvoletta-crypto = { path = "../nuvoletta-crypto", version = "0.1.0-rc.1" }
+nuvoletta-storage = { path = "../nuvoletta-storage", version = "0.1.0-rc.1" }
 sha2.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
