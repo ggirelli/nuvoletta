@@ -1,6 +1,6 @@
 # ADR 0008: In-app device join and vault header adoption
 
-Status: Proposed (2026-11; needs owner approval before any code)
+Status: Accepted (2026-11-17, with the owner's decisions on O1 to O7 below)
 Date: 2026-11-17
 
 ## Context
@@ -127,7 +127,7 @@ fetched by the sync cycle). The highest candidate that parses is offered.
 
 **What the user types.** The new passphrase (or the new recovery key). Only the unlocked case is
 supported by default: the device is unlocked with the old passphrase, holds the DEK in memory, and so
-can check rule A.5 and re-encrypt nothing. Locked case: see O4.
+can check rule A.5 and re-encrypt nothing. Locked case: see O1.
 
 **Checks (all of A, plus):**
 - `header_gen` strictly greater than the local header's and `>= verified-header-gen`. Equal or lower
@@ -209,24 +209,31 @@ generic unlock error. The user guide's manual steps move to a "if the app cannot
   unwrap, and adopting without checking the MAC would reopen M2.
 - **Store a header fingerprint on the provider outside `h/`**: a new on-wire object; rejected here.
 
-## Open questions for the owner
+## Decisions on the open questions
 
-- **O1. Locked-device adoption.** If B was never unlocked after the change and the user only
-  remembers the new passphrase, the old header cannot open the vault, so rule A.5 cannot compare the
-  DEK. Option: unlock with the candidate remote header, then verify the DEK by opening one local
-  K_local-sealed file or note envelope (existing data), and only then replace the header. Accept?
-- **O2. Header generation in the logs (format change).** Recording `header_gen` in checkpoints would
-  let a new device detect a rolled-back header after its first sync. That is a wire-format change
-  (breaking, `!`) and is **not** proposed unless the owner wants it.
-- **O3. Fingerprint construction.** Is a truncated SHA-256 of `vault_id` with a label acceptable, or
-  should the fingerprint be the raw `vault_id` in grouped hex (nothing new, longer to compare)?
-- **O4. Join with the recovery key.** Forcing a new passphrase right away publishes a new header
-  generation from a brand-new device before it has synced. Is that acceptable, or should it defer
-  until after the first successful sync?
-- **O5. Upper bound on KDF cost at adoption/join.** The parser allows 1 GiB and t up to 16; a phone
-  may not manage it. Propose: refuse above 256 MiB on Android with a clear message. Pick the numbers.
-- **O6. Diverging same-generation headers.** Present both and let the user choose, or refuse and
-  require another device to bump the generation? Also confirm that the app already surfaces a lost
-  publication race on `h/<gen>` (to be verified in code before implementation).
-- **O7. Cancelling a join.** Remove the empty vault directory automatically on failure, or leave it
-  for the user? (Proposed: remove only while it holds no notes.)
+The owner answered the questions raised when this ADR was proposed. The labels are kept because the
+text above refers to them.
+
+- **O1. Locked-device adoption: accepted.** A device that was not unlocked since the change unlocks
+  with the candidate remote header and the typed secret. It then verifies the DEK by opening
+  existing local sealed data (a note envelope, or a `K_local`-sealed state file). Only after that
+  succeeds is the header replaced. With no sealed local data there is nothing to verify against and
+  the header is refused (the device can join again instead).
+- **O2. No format change.** `header_gen` is not recorded in logs or checkpoints. The residual risk
+  is documented in `docs/THREAT_MODEL.md` (T7): a new device cannot detect a rolled-back genuine
+  header.
+- **O3. Fingerprint = the raw `vault_id` in grouped hex.** No new derivation, no hash: 32 hex
+  characters in groups of four.
+- **O4. Join with the recovery key.** The new passphrase is required only after the first
+  successful sync, so a brand-new device never publishes a header generation before it has synced.
+  Until then the device works with the header it joined with.
+- **O5. KDF cost cap at join and adoption.** On Android a header with `m` above 256 MiB or `t`
+  above 8 is refused with a clear message before Argon2 runs. The desktop accepts the full range
+  the parser allows.
+- **O6. Diverging same-generation headers.** The app adopts the one the typed passphrase opens and
+  shows a warning about the other, which it does not trust. Nothing is chosen silently. (Verified in
+  code: before this change a lost publication race on `h/<gen>` surfaced only as the generic
+  "invalid header" notice; it now has its own `HeaderDiverged` warning.)
+- **O7. Cancelling a join.** On a failed or cancelled join the vault directory is removed only if it
+  holds no notes (no note files and nothing in the local trash); otherwise it is left in place and
+  the user is told where it is.
