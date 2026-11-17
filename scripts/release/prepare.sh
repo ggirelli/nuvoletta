@@ -16,10 +16,12 @@ re='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
 old=$(scripts/release/version.sh)
 [ "$old" != "$new" ] || { echo "already at $new" >&2; exit 1; }
 
-sed -i "/^\[workspace.package\]/,/^\[/s/^version = \"$old\"$/version = \"$new\"/" Cargo.toml
+# sed -i.bak (and then rm) is the form both GNU and BSD sed accept.
+sed -i.bak "/^\[workspace.package\]/,/^\[/s/^version = \"$old\"$/version = \"$new\"/" Cargo.toml
 
 old_re=${old//./\\.}
-sed -i "/path = \"/s/version = \"$old_re\"/version = \"$new\"/" crates/*/Cargo.toml apps/*/Cargo.toml
+sed -i.bak "/path = \"/s/version = \"$old_re\"/version = \"$new\"/" crates/*/Cargo.toml apps/*/Cargo.toml
+rm -f Cargo.toml.bak crates/*/Cargo.toml.bak apps/*/Cargo.toml.bak
 
 cargo update --workspace --offline
 echo "version: $old -> $new (Android versionCode $(scripts/release/version.sh --android-code))"

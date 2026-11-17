@@ -17,3 +17,8 @@ icon = ["assets/icon-256.png", "assets/icon.ico"]
 min_sdk = 28
 target_sdk = 34
 compile_sdk = 34
+
+[bundle.windows.nsis]
+# dx's template rejects pre-release versions (VIProductVersion needs X.X.X.X). The copy is generated
+# by scripts/release/windows-nsis.sh from installer.nsi.in; see docs/RELEASING.md (Versioning).
+template = "windows/installer.nsi"
