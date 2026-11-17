@@ -24,6 +24,23 @@ fetched fresh by the check, so a new advisory fails the next run even if nothing
 no separate scheduled audit job; the nightly workflow would be the place to add one if advisories
 need to be noticed on days without a commit.
 
+### Known advisory exceptions
+
+Two advisories are ignored in `deny.toml`, both pinned by the Dioxus desktop stack (no patched
+version can be selected by a lockfile update). GitHub Dependabot reports them as open alerts
+because it does not read `deny.toml`; the alerts are expected to stay open until the Dioxus update
+below lands.
+
+* `RUSTSEC-2026-0097` (GHSA-cq8v-f236-94qc, `rand` 0.7.3, low): pulled in by `phf_generator` 0.8
+  in the `selectors` build script (wry). The advisory needs the `log` feature and a custom logger
+  calling `rand::rng()`; neither applies to this build-time copy.
+* `RUSTSEC-2024-0429` (GHSA-wrw7-89jp-8q8g, `glib` 0.18.5, medium): pinned by `gtk` 0.18 under
+  `tao`, `wry` and `muda`. No crate in the lockfile calls `VariantStrIter`, and Nuvoletta does not
+  use glib directly.
+
+Remove both entries once Dioxus (and therefore wry, tao and muda) moves to `glib` >= 0.20 and
+`rand` >= 0.8.6 in the lockfile, and check `Cargo.lock` after each Dioxus update.
+
 `Cargo.lock` is committed and every CI command uses `--locked`, so builds use exactly the reviewed
 versions with the checksums recorded in the lockfile. The `fuzz/` crate has its own lockfile
 (`fuzz/Cargo.lock`) because it is excluded from the workspace; it is not covered by `just deny`

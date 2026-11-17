@@ -18,10 +18,12 @@ ignore = [
     { id = "RUSTSEC-2024-0436", reason = "unmaintained proc-macro; build-time only, via image's AVIF encoder" },
     # proc-macro-error: glib-macros <- gtk <- tao/wry (Linux windowing)
     { id = "RUSTSEC-2024-0370", reason = "unmaintained proc-macro; build-time only, via the GTK bindings" },
-    # glib 0.18: gtk-rs 0.18 is what tao/wry 0.5x use on Linux; fixed in glib 0.20, which needs a wry update.
-    { id = "RUSTSEC-2024-0429", reason = "unsound VariantStrIter in glib 0.18; Nuvoletta never iterates GVariant strings; only via tao/wry on Linux" },
-    # rand 0.7.3: phf_generator 0.8 <- phf_codegen <- selectors build script (wry); the unsoundness needs a custom logger calling rand::rng(), and this copy only runs at build time.
-    { id = "RUSTSEC-2026-0097", reason = "rand 0.7.3 is build-time only (selectors' phf_codegen); no custom logger" },
+    # glib 0.18.5 (GHSA-wrw7-89jp-8q8g): gtk 0.18 <- tao/wry/muda <- dioxus-desktop 0.7 pins it; the patched glib 0.20 cannot be selected without a Dioxus update.
+    # No crate in the lockfile calls VariantStrIter, and nuvoletta does not use glib directly.
+    { id = "RUSTSEC-2024-0429", reason = "unsound VariantStrIter in glib 0.18; pinned by gtk 0.18 via dioxus-desktop (no patched path); no crate in the tree calls VariantStrIter" },
+    # rand 0.7.3 (GHSA-cq8v-f236-94qc): phf_generator 0.8 <- phf_codegen <- selectors build script (wry); pinned by phf_generator, no patched path without a Dioxus update.
+    # The advisory needs the `log` feature and a custom logger calling rand::rng(); this copy has no `log` feature, no logger, and runs only at build time.
+    { id = "RUSTSEC-2026-0097", reason = "rand 0.7.3 is build-time only (selectors' phf_codegen); no `log` feature and no custom logger" },
 ]
 
 [licenses]
