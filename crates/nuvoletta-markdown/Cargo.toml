@@ -11,7 +11,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-nuvoletta-core = { path = "../nuvoletta-core", version = "0.0.0" }
+nuvoletta-core = { path = "../nuvoletta-core", version = "0.1.0-rc.1" }
 pulldown-cmark = { version = "0.13", default-features = false }
 unicode-normalization.workspace = true
 zeroize.workspace = true

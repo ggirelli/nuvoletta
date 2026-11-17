@@ -12,8 +12,8 @@ workspace = true
 
 [dependencies]
 getrandom.workspace = true
-nuvoletta-core = { path = "../nuvoletta-core", version = "0.0.0" }
-nuvoletta-crypto = { path = "../nuvoletta-crypto", version = "0.0.0" }
+nuvoletta-core = { path = "../nuvoletta-core", version = "0.1.0-rc.1" }
+nuvoletta-crypto = { path = "../nuvoletta-crypto", version = "0.1.0-rc.1" }
 thiserror.workspace = true
 unicode-normalization.workspace = true
 zeroize.workspace = true

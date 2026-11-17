@@ -16,7 +16,7 @@ test-server = ["dep:rcgen"]
 
 [dependencies]
 getrandom.workspace = true
-nuvoletta-sync = { path = "../nuvoletta-sync", version = "0.0.0" }
+nuvoletta-sync = { path = "../nuvoletta-sync", version = "0.1.0-rc.1" }
 percent-encoding = "2"
 quick-xml = "0.42"
 rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"], optional = true }
@@ -28,7 +28,7 @@ zeroize.workspace = true
 
 [dev-dependencies]
 nuvoletta-webdav = { path = ".", features = ["test-server"] }
-nuvoletta-core = { path = "../nuvoletta-core", version = "0.0.0" }
-nuvoletta-crypto = { path = "../nuvoletta-crypto", version = "0.0.0" }
-nuvoletta-storage = { path = "../nuvoletta-storage", version = "0.0.0" }
+nuvoletta-core = { path = "../nuvoletta-core", version = "0.1.0-rc.1" }
+nuvoletta-crypto = { path = "../nuvoletta-crypto", version = "0.1.0-rc.1" }
+nuvoletta-storage = { path = "../nuvoletta-storage", version = "0.1.0-rc.1" }
 tempfile = "3"

@@ -12,8 +12,8 @@ workspace = true
 
 [dependencies]
 dioxus = { version = "0.7", features = [] }
-nuvoletta-app-core = { path = "../../crates/nuvoletta-app-core", version = "0.0.0" }
-nuvoletta-core = { path = "../../crates/nuvoletta-core", version = "0.0.0" }
+nuvoletta-app-core = { path = "../../crates/nuvoletta-app-core", version = "0.1.0-rc.1" }
+nuvoletta-core = { path = "../../crates/nuvoletta-core", version = "0.1.0-rc.1" }
 serde_json.workspace = true
 tokio = { version = "1", default-features = false, features = ["time"] }
 webbrowser = "1"
