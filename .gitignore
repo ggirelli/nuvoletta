@@ -5,3 +5,4 @@
 /spikes/dioxus-editor/target/
 /spikes/dioxus-editor/js/node_modules/
 /apps/nuvoletta-app/js/node_modules/
+/dist/

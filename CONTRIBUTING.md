@@ -48,7 +48,7 @@ Maintainers work in one jj workspace per task under `.workspaces/<name>` (git-ig
   `<type>(<optional scope>): <summary>`, in the imperative mood, lower case, no trailing full stop.
   - Types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`, `revert`.
   - Scopes name the area: `crypto`, `core`, `storage`, `markdown`, `sync`, `provider`, `webdav`,
-    `app`, `plan`, `design`, `spike`, `deps`.
+    `app`, `plan`, `design`, `spike`, `deps`, `release`.
   - Breaking changes (including any change to an on-disk or on-wire format) add `!` after the
     type/scope and a `BREAKING CHANGE:` footer.
   - The body explains what changed and why.

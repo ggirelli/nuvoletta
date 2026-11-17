@@ -79,6 +79,7 @@ nav:
   - Quality:
       - Performance and battery: PERFORMANCE.md
       - Accessibility: ACCESSIBILITY.md
+  - Releasing and verifying downloads: RELEASING.md
   - Development: development.md
 
 markdown_extensions:

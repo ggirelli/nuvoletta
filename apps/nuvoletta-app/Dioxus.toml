@@ -7,6 +7,11 @@ android_main_activity = "android/MainActivity.kt"
 [bundle]
 identifier = "dev.nuvoletta.app"
 publisher = "Nuvoletta"
+short_description = "Private thoughts. Safely kept."
+long_description = "Nuvoletta is a local-first encrypted notes app: your notes are encrypted on your device and synced only as ciphertext."
+category = "Utility"
+copyright = "Free software under the MIT licence."
+icon = ["assets/icon-256.png", "assets/icon.ico"]
 
 [android]
 min_sdk = 28
