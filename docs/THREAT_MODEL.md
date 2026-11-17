@@ -80,8 +80,10 @@ Scope: MVP (PLAN.md rev 2): one vault per install, one passphrase plus one recov
 | T19 | Forged log entries by an enrolled but hostile device (X9, N5) | None in MVP | Full residual; per-device signing keys are future work. |
 | T20 | Data loss from sync bugs or crashes | Conflict-preserving merge, immutable objects, atomic writes, local snapshots | Bugs; tested via fault injection. |
 | T21 | Lost passphrase and recovery key | By design unrecoverable | User loses vault. Onboarding must make the recovery key step unmissable. |
-| T22 | Plaintext export left on disk | Explicit export action with warning; no auto-export | User responsibility. |
+| T22 | Plaintext export left on disk | Explicit export action with warning; no auto-export; export refuses the vault folder and the configured sync folder | User responsibility for every other location (a folder synced by a tool Nuvoletta does not know about is not detected). |
 | T23 | Side channels, shoulder-surfing, screenshots | `FLAG_SECURE` on Android; constant-time comparisons via `subtle` | Out of scope on desktop. |
+| T24 | Local writer of the vault folder (evil maid with the locked device, a backup restored over it): edits `device-state/sync.json`, deletes `device-state/sync-notices` (X1) | The notices file is sealed with `K_local`; a replaced or damaged one raises a visible notice; the lock, the header and all note data are authenticated | The folder choice in `sync.json` is plaintext: repointing it makes the device see a different (for example empty) remote, which hides remote rollbacks and tampering from that device until the user notices. Deleting the sealed notices file cannot be told from a fresh start. Not fixed: authenticating these files would not stop the same writer from deleting them or from replacing the app. |
+| T25 | WebDAV account rights that differ by folder (X6) | The probe covers the main folder, `h/`, `d/`, `o/` and refuses unknown answers | The sub-folders created later and folder-level `DELETE`/`MOVE` are not probed; servers with path- or owner-based rules need a manual check (see `docs/WEBDAV.md`). Planned improvement: probe a folder the account creates itself. |
 
 ## 6. Trust boundaries
 

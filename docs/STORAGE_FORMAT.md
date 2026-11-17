@@ -87,7 +87,9 @@ the sync scan only reads `notes/`, so a delete that moves is seen as a delete.
 - **Retention.** At unlock (and when the app lists the trash) entries older than 30 days (the sync
   GC grace period) are deleted. A missing, tampered or unreadable index never shortens retention:
   files without a time are stamped with the current time. There is no API to empty the trash or
-  delete one entry; the only removal paths are expiry and restore.
+  delete one entry; the only removal paths are expiry and restore. Expiry uses the local wall
+  clock: a clock set far forward empties the trash at the next unlock, so an untrusted clock is a
+  data-loss risk (the same is true of the sync GC windows).
 - **Restore** (`Unlocked::restore_from_trash`) moves the file back if the id is free. If a live
   note has the id, the trashed version is stored as a new note (new id, title suffixed
   " (restored)"); nothing is overwritten. Notes that sync tracks must not use this path: the app

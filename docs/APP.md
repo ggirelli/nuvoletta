@@ -133,8 +133,9 @@ device**; the list of what needs testing is in [PLAN.md](plan.md) (Phase 6). The
 - **Storage.** The vault lives in the app's private storage, which other apps cannot read; there is no
   folder to choose and no storage permission. It is excluded from Android backups. The first start
   asks you to create the vault; later starts go straight to unlocking it.
-- **Permission.** The app declares only `INTERNET`, which Android requires for the local channel
-  between the app and its webview. It makes no network connections.
+- **Permission.** The app declares only `INTERNET`. Android requires it for the local channel
+  between the app and its webview (loopback only), and it is also what WebDAV sync uses to reach
+  your server. With sync off (the default) the app makes no network connections.
 - **Locking.** The vault is **saved and locked as soon as the app leaves the screen** (home, app
   switcher, screen off, a call). Coming back asks for the passphrase. If the save fails, nothing is
   locked or discarded and the app tells you when you return. The inactivity timer still applies
@@ -143,9 +144,9 @@ device**; the list of what needs testing is in [PLAN.md](plan.md) (Phase 6). The
   app (`FLAG_SECURE`).
 - **Small screens.** The note list and the open note take turns (*‹ Notes* goes back), the top bar
   wraps, *Details* shows folder, tags and delete, and *Preview* swaps the editor for the preview.
-- **Not available yet:** sync (Android needs a folder an external sync app can reach, which needs the
-  Storage Access Framework; see ADR 0006) and export and import (they need folder access). Until
-  sync exists an Android vault is stand-alone.
+- **Sync.** WebDAV sync is available (see [WebDAV setup](WEBDAV.md)). Syncing through a folder kept
+  by an external app is not (it needs the Storage Access Framework; see ADR 0006).
+- **Not available yet:** export and import (they need folder access).
 - **Limits.** The webview holds plaintext as on desktop. Your keyboard app may learn what you type
   in the editor (use a keyboard with an incognito mode if that matters), and the Android clipboard is
   shared with other apps.
@@ -204,12 +205,21 @@ folder of `.md` files and never overwrites an existing note. See the
   deferred (PLAN.md section 11).
 - **Settings** (auto-lock period and the last vault folder) are stored unencrypted in the user's
   configuration directory. They contain no secrets.
-- **Sync settings and warnings** (the sync folder path, and the integrity warnings you have not
-  acknowledged) are stored unencrypted in the vault's `.nuvoletta/device-state/` on this device, are
-  never uploaded, and contain no keys or note content (warnings name devices by a short id and
-  sequence numbers, which are visible in the sync folder's file names anyway).
-- **Sync and the webview.** Sync adds no network access to the page: the worker thread only reads
-  and writes the chosen local folder, and the Content-Security-Policy is unchanged. The conflict view
+- **Sync settings** (the sync folder path and the backend) are stored unencrypted in the vault's
+  `.nuvoletta/device-state/sync.json` on this device and are never uploaded; they hold no keys or
+  note content. Someone who can write that file can repoint the device at another folder (it then
+  looks like an empty or rolled-back remote); see the threat model, T24.
+- **Sync warnings** (integrity warnings you have not acknowledged) are sealed with a key derived
+  from your vault key in `device-state/sync-notices` and never uploaded. They name devices by a
+  short id and sequence numbers, which are visible in the sync folder's file names anyway. A file
+  that has been replaced or damaged is reported; a deleted one cannot be told from a fresh start.
+- **Export never goes to the sync folder.** Export refuses a destination inside or containing the
+  configured sync folder (also while sync is off), because it is uploaded by whatever syncs it.
+- **One window per vault.** A vault is open in one Nuvoletta window or process at a time; a second
+  one is told it is already open (an advisory lock on `.nuvoletta/lock`).
+- **Sync and the webview.** Sync adds no network access to the page: the sync worker thread (a
+  local folder, or the HTTPS client for WebDAV) runs in the app process, never in the webview, and
+  the Content-Security-Policy is unchanged. The conflict view
   shows note text, so it has the same plaintext-in-the-webview limit as the editor.
 - **Not available yet:** removing deleted notes' last versions from the sync folder, editing a merge directly inside the conflict view (use *Use version N and edit*), a keyboard
   shortcut for *Sync now* (use the *Sync now* button) and providers other than a synced folder and WebDAV.
