@@ -46,6 +46,9 @@ pub enum Error {
     /// The vault header on disk changed underneath this session; reopen the vault.
     #[error("vault header changed on disk since unlock")]
     HeaderChanged,
+    /// A vault header found elsewhere was refused (see [`crate::Refusal`]).
+    #[error("vault header refused: {0:?}")]
+    HeaderRefused(crate::Refusal),
     /// Another Nuvoletta window or process has this vault open.
     #[error("this vault is already open in another Nuvoletta window or process")]
     VaultInUse,

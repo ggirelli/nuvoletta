@@ -12,6 +12,7 @@
 
 #![forbid(unsafe_code)]
 
+mod adopt;
 mod app;
 mod clock;
 mod csp;
@@ -29,6 +30,7 @@ mod sync_types;
 mod tree;
 mod webdav;
 
+pub use adopt::{AdoptOutcome, AdoptPreview, AdoptSearchEvent};
 pub use app::{
     App, DEFAULT_AUTOSAVE_DEBOUNCE, NoteInfo, NoteRef, Phase, SearchResult, TickOutcome,
     UnresolvedRef,

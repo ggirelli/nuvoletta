@@ -38,7 +38,7 @@ Do these in order. They limit the damage; they do not undo it.
    sync location's files.
 
 Other devices that were already enrolled see a notice that a newer header exists and keep working
-with the old one until you move them over (see
+with the old one until you press **Use the new passphrase** on them (see
 [Recovery key](recovery-key.md#after-a-passphrase-change-on-another-device)).
 
 ## Joining a new device

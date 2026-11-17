@@ -396,21 +396,30 @@ impl<P: Provider> Syncer<P> {
             // A name proves nothing: only a header that parses, belongs to this vault, carries
             // the generation it is named after and passes the header MAC under this vault's
             // keys counts. Anything else is reported as invalid and ignored.
-            let ok = match self.provider.get(&e.name) {
-                Ok(bytes) => nuvoletta_crypto::VaultHeader::parse(&bytes).is_ok_and(|h| {
-                    h.vault_id() == vault_id
-                        && h.generation() == generation
-                        && h.verify_mac(vault.keys())
-                        && (generation != local_gen || bytes == header.as_bytes())
-                }),
+            let (authentic, diverged) = match self.provider.get(&e.name) {
+                Ok(bytes) => {
+                    nuvoletta_crypto::VaultHeader::parse(&bytes).map_or((false, false), |h| {
+                        let authentic = h.vault_id() == vault_id
+                            && h.generation() == generation
+                            && h.verify_mac(vault.keys());
+                        (authentic, authentic && bytes != header.as_bytes())
+                    })
+                }
                 Err(ProviderError::NotFound(_)) => continue,
                 Err(e) => return Err(e.into()),
             };
+            // Of the generation this device holds, only its own bytes count.
+            let diverged = diverged && generation == local_gen;
+            let ok = authentic && !diverged;
             if ok {
                 have_local |= generation == local_gen;
                 remote_max = remote_max.max(generation);
             }
-            if !ok {
+            if diverged {
+                self.report
+                    .warnings
+                    .push(Warning::HeaderDiverged { generation });
+            } else if !ok {
                 self.report
                     .warnings
                     .push(Warning::HeaderInvalid { generation });

@@ -501,6 +501,16 @@ fn SyncMain() -> Element {
                                 strong { "{n.title}" }
                                 p { "{n.detail}" }
                                 p { class: "hint", "First seen {ago(n.first_seen_ms, now)}." }
+                                if n.code == "header-newer" || n.code == "header-diverged" {
+                                    button {
+                                        class: "primary",
+                                        onclick: move |_| {
+                                            let mut a = ui.adopt;
+                                            a.set(true);
+                                        },
+                                        "Use the new passphrase"
+                                    }
+                                }
                                 button {
                                     onclick: {
                                         let c = c_ack.clone();

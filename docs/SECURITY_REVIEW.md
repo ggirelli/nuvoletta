@@ -43,7 +43,7 @@ written down), **deferred** (not done; reason given).
 
 | Id | Finding | Status |
 |----|---------|--------|
-| I1 | The "passphrase changed elsewhere" message told users to do something that does not work | Fixed: the message now describes the manual header copy that does work. Adopting a newer header in the app is a separate follow-up, not done |
+| I1 | The "passphrase changed elsewhere" message told users to do something that does not work | Fixed: the message described the manual header copy; since ADR 0008 the app adopts the new header (**Use the new passphrase**), and the manual copy remains as a fallback |
 | I2 | Stale Android and "no network connections" text | Fixed in `APP.md`, the manifest comment, ADR 0006 and the privacy policy |
 | I3 | Android lock waits for a running WebDAV cycle | Deferred: needs cancellation support in the sync worker |
 | I4 | CSP residuals (`unsafe-inline`, `unsafe-eval`, loopback WebSocket) | Accepted; already documented in ADR 0004. Keep the renderer fuzzed |

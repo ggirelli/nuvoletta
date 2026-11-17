@@ -210,6 +210,14 @@ pub fn Unlock() -> Element {
                 }
                 div { class: "actions",
                     button { class: "primary", r#type: "submit", "Unlock" }
+                    button {
+                        r#type: "button",
+                        onclick: move |_| {
+                            let mut a = ui.adopt;
+                            a.set(true);
+                        },
+                        "Passphrase changed on another device?"
+                    }
                     if !crate::platform::ANDROID {
                         button {
                             r#type: "button",

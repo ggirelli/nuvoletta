@@ -156,12 +156,12 @@ pub(crate) struct Joining {
 }
 
 #[derive(Clone)]
-enum Origin {
+pub(crate) enum Origin {
     Folder(PathBuf),
     WebDav(WebDavConfig),
 }
 
-enum Done {
+pub(crate) enum Done {
     Scan(HeaderScan, Origin),
     Event(JoinSearchEvent),
 }
@@ -180,9 +180,11 @@ pub(crate) struct JoinState {
     verified: Option<Verified>,
 }
 
-enum Input {
+pub(crate) enum Input {
     Folder(PathBuf),
     WebDav(WebDavConfig),
+    /// An already verified provider (the one this device syncs with).
+    Provider(crate::sync::BoxProvider, SyncBackend),
 }
 
 fn scan_with<P: Provider + ?Sized>(provider: &P, origin: Origin, backend: SyncBackend) -> Done {
@@ -198,8 +200,9 @@ fn scan_with<P: Provider + ?Sized>(provider: &P, origin: Origin, backend: SyncBa
     }
 }
 
-fn search(input: Input) -> Done {
+pub(crate) fn search(input: Input) -> Done {
     match input {
+        Input::Provider(p, backend) => scan_with(&*p, Origin::Folder(PathBuf::new()), backend),
         Input::Folder(p) => {
             // `FolderProvider::new` would create a missing folder; a join must never.
             if !p.is_dir() {

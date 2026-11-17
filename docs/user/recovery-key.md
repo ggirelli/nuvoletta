@@ -28,12 +28,32 @@ the same). They show the notice "The passphrase or recovery key was changed else
 adopts the new header it still unlocks with the **old** passphrase, which is why a lost device's
 old passphrase remains useful to a thief of that device (see [device loss](device-loss.md)).
 
-To move another device to the new passphrase:
+To move another device to the new passphrase, use the app:
 
-1. Close the vault in nuvoletta (*Close vault*, not just *Lock*: the header is read when the vault is
-   opened).
-2. Copy the newest `h/<generation>.nvhdr` from the sync location over `.nuvoletta/vault-header` in that
-   device's vault folder.
-3. Open the vault again and unlock with the **new** passphrase.
+1. On the device that still has the old passphrase, open *Sync* and, under the warning "The passphrase
+   or recovery key was changed elsewhere", press **Use the new passphrase**.
+2. Type the **new** passphrase (or the new recovery key). The app fetches the new header from the sync
+   location, opens it with what you typed, checks that it belongs to this vault and that its keys are
+   the ones this device already holds, and only then replaces the header here. Your notes are not
+   touched.
+3. If the new header makes guessing the passphrase cheaper than before (lower memory or passes), the
+   app says so and asks you to confirm.
+
+If the device was **locked and never unlocked since the change**, you only know the new passphrase and
+the old header cannot open it: on the unlock screen press **Passphrase changed on another device?**,
+enter the new passphrase, and the app checks the new header against the notes and sync data on this
+device before it replaces the header. A device that holds no notes and no sync data cannot do that
+check and refuses; join the vault again instead. A device that syncs through WebDAV and is locked asks
+for the address and account again (the saved ones are readable only while unlocked).
+
+The app refuses a header older than the newest one this device has seen (an old genuine header would
+bring back an old passphrase), a header of another vault, and one whose keys do not match this
+device's notes. If the passphrase was changed on two devices at the same moment, the app uses the
+header your typed passphrase opens and warns you about the other.
+
+!!! note "If the app cannot do it"
+    The manual way still works: close the vault (*Close vault*, not just *Lock*), copy the newest
+    `h/<generation>.nvhdr` of the sync location over `.nuvoletta/vault-header` in that device's vault
+    folder, open the vault again and unlock with the **new** passphrase.
 
 This is tested end to end, including that the old recovery key stops working.

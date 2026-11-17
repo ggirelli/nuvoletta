@@ -139,10 +139,18 @@ pub(crate) fn describe_warning(w: &Warning, now_ms: i64) -> SyncNotice {
             "The passphrase or recovery key was changed elsewhere".to_owned(),
             format!(
                 "Another device published vault header generation {generation} (its integrity was verified \
-                 with this vault's keys). This device does not adopt a newer header automatically yet, so it \
-                 keeps the old one and the old passphrase still unlocks it here. To use the new passphrase on \
-                 this device, close the app and copy the newest file of the sync folder's h folder over \
-                 .nuvoletta/vault-header in this vault."
+                 with this vault's keys). This device keeps its old header, so the old passphrase still \
+                 unlocks it here. Choose \"Use the new passphrase\" and enter the new passphrase (or recovery \
+                 key) to switch this device to the new header."
+            ),
+        ),
+        Warning::HeaderDiverged { generation } => (
+            "header-diverged",
+            "The passphrase was changed on two devices at the same time".to_owned(),
+            format!(
+                "Another device published a different vault header of generation {generation}, and its file won \
+                 the name. Both are genuine. Choose \"Use the new passphrase\" and enter the passphrase set on \
+                 the other device to adopt its header, then change the passphrase again here if you want yours."
             ),
         ),
         Warning::JournalReset { moved_to } => (

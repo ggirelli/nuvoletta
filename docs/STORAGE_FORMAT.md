@@ -47,6 +47,7 @@ operated on. Sync state (`SYNC_PROTOCOL.md`, Phase 4) is described in section 4.
 | change passphrase | new header via the crypto crate, verified to unlock, then atomically replaces the old one; notes untouched |
 | rotate recovery key | needs the current passphrase; same mechanics |
 | join | for a device that has no vault: takes a vault already opened from a header found on a provider (`Secret::open`), creates `.nuvoletta/` and an empty `notes/`, writes exactly the header bytes that verified; fails if a header exists |
+| verify and adopt header | opens a candidate header with the user's secret and binds it to the vault: same vault id, generation not lower (equal only if different bytes), and the keys equal the session's (unlocked) or open existing sealed local data (locked: notes first, then `sync-state`, `device-state`, `trash`; none to open is a refusal); then replaces `vault-header` atomically, after checking the file on disk is still the one this session holds |
 | remove unused vault | undoes a failed or cancelled join: removes `.nuvoletta/` and `notes/` only if there is no note file, nothing in `.nuvoletta/trash` besides its index, and no symlink; removes the directory itself only if that leaves it empty |
 
 Atomic write: create `.tmp-<random>` in the destination directory (`create_new`), write, `fsync`

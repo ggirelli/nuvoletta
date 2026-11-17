@@ -1,5 +1,6 @@
 //! The application session: state machine, open-note buffer, autosave and auto-lock.
 
+use crate::adopt::AdoptState;
 use crate::clock::Clock;
 use crate::error::{Error, Result};
 use crate::join::{JoinState, Joining};
@@ -162,6 +163,7 @@ pub struct App {
     kdf: KdfParams,
     pub(crate) kdf_limit: KdfLimit,
     pub(crate) join: Option<JoinState>,
+    pub(crate) adopt: Option<AdoptState>,
     debounce: Duration,
     pub(crate) state: State,
     pub(crate) sync_cfg: SyncSettings,
@@ -178,6 +180,7 @@ impl App {
             kdf: KdfParams::DEFAULT,
             kdf_limit: KdfLimit::platform(),
             join: None,
+            adopt: None,
             debounce: DEFAULT_AUTOSAVE_DEBOUNCE,
             state: State::NoVault,
             sync_cfg: SyncSettings::default(),
