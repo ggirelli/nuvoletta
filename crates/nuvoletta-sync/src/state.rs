@@ -4,8 +4,10 @@
 //! envelope type 4 (key `K_local`) and written atomically; the `kind` tag stops a file being
 //! swapped for another one. `revs/<rev>.nvobj` holds verbatim copies of type 1 revision envelopes
 //! (already encrypted with `K_note`). Everything but `device-id` and `journal` is rebuildable from
-//! the remote logs; a state file that fails to open is treated as lost and rebuilt, but a corrupt
-//! `journal` is an error (it may hold unsent edits).
+//! the remote logs; a state file that fails to open is treated as lost and rebuilt. A `journal`
+//! that fails to open is never deleted: it is moved aside to `journal.corrupt-<ms>` and the sync
+//! continues with an empty one, because everything it could hold is found again by the next scan
+//! (the notes are in the vault; see `SYNC_PROTOCOL.md` section 6.1).
 
 use crate::error::{Error, Result};
 use crate::graph::NoteGraph;
@@ -299,6 +301,8 @@ pub struct State {
     pub max_header_gen: u32,
     /// The notes/peers state did not exist or was unreadable at load: rebuilding from the remote.
     pub rebuilt: bool,
+    /// Name of the file a damaged journal was moved to at load, until reported.
+    pub journal_moved_to: Option<String>,
     dirty: Dirty,
 }
 
@@ -390,11 +394,28 @@ where
     }
 }
 
+/// Rename a journal that cannot be read to `journal.corrupt-<unix ms>` (never overwriting an
+/// existing file) and return the new name. The bytes are kept for diagnosis and recovery.
+fn move_journal_aside(dir: &Path) -> Result<String> {
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis());
+    let mut name = format!("journal.corrupt-{ms}");
+    let mut n = 1;
+    while dir.join(&name).exists() {
+        name = format!("journal.corrupt-{ms}-{n}");
+        n += 1;
+    }
+    fs::rename(dir.join("journal"), dir.join(&name))?;
+    Ok(name)
+}
+
 impl State {
     /// Load the state from `dir` (creating it, and a fresh device id, if missing).
     ///
     /// # Errors
-    /// I/O errors, or a corrupt `journal` or `device-id`.
+    /// I/O errors, or a corrupt `device-id`. A corrupt `journal` is moved aside
+    /// (`journal_moved_to`).
     pub fn load(dir: &Path, keys: &Subkeys) -> Result<Self> {
         fs::create_dir_all(dir.join(REVS_DIR))?;
         // Our own interrupted writes only ever hold ciphertext.
@@ -410,7 +431,13 @@ impl State {
             }
             Err(e) => return Err(e.into()),
         };
-        let journal: Option<Journal> = load_file(dir, keys, "journal")?;
+        let (journal, journal_moved_to) = match load_file::<Journal>(dir, keys, "journal") {
+            Ok(j) => (j, None),
+            // Failed authentication or decoding: the content is unreadable, not unreachable. A
+            // plain I/O error stays an error (the file may be fine).
+            Err(Error::Crypto(_) | Error::State(_)) => (None, Some(move_journal_aside(dir)?)),
+            Err(e) => return Err(e),
+        };
         let peers: Result<Option<BTreeMap<DeviceId, Peer>>> = load_file(dir, keys, "peers");
         let notes: Result<Option<BTreeMap<Id16, NoteRec>>> = load_file(dir, keys, "notes");
         let (peers, notes, rebuilt) = match (peers, notes) {
@@ -447,6 +474,7 @@ impl State {
             pending,
             max_header_gen,
             rebuilt,
+            journal_moved_to,
             dirty: Dirty::default(),
         };
         if rebuilt {

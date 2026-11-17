@@ -63,10 +63,11 @@ export afterwards. Format details: [export format](../EXPORT_FORMAT.md).
   deleted. Restore the file from a backup, or fetch it again from the sync folder.
 - **Local sync bookkeeping is lost or damaged** (the `.nuvoletta/sync-state` folder): it is rebuilt
   from the sync folder on the next sync, so you lose nothing. An edit made while that state was gone
-  shows up as a conflict with both versions rather than silently replacing one. If a **sync
-  complains that a file failed verification** and the damaged file is `journal`, close the app, delete
-  `.nuvoletta/sync-state/journal` and sync again: unsent edits are found again and sent. (The app
-  stops on a damaged journal instead of guessing, because it may hold edits not yet sent.)
+  shows up as a conflict with both versions rather than silently replacing one. If the
+  list of unsent changes (`journal`) is damaged, the app keeps the damaged file as
+  `.nuvoletta/sync-state/journal.corrupt-<time>`, starts a fresh one, shows a notice in the sync view
+  and continues: unsent edits are found again from your notes and sent, so nothing is lost. Delete
+  the set-aside file once you have checked that your recent edits arrived.
 - **The local trash is lost** (`.nuvoletta/trash`): notes synced before deletion can still be
   restored from *Recently deleted* through the sync history. Without sync, deleted notes that were
   only in the trash are gone.
