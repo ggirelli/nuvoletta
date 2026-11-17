@@ -71,6 +71,9 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: "1" # runners have no FUSE
         run: |
           . scripts/release/env.sh
+          # linuxdeploy's mksquashfs refuses SOURCE_DATE_EPOCH together with its own timestamp
+          # options. The AppImage is not claimed reproducible (docs/RELEASING.md), so drop it here.
+          unset SOURCE_DATE_EPOCH
           dx bundle --platform desktop --release --locked --package nuvoletta-app \
             --package-types appimage --package-types deb --out-dir dist
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -138,6 +141,7 @@ jobs:
       - name: Build the MSI and NSIS installers
         run: |
           . scripts/release/env.sh
+          scripts/release/windows-nsis.sh # numeric VIProductVersion for pre-releases
           dx bundle --platform desktop --release --locked --package nuvoletta-app \
             --package-types msi --package-types nsis --out-dir bundle
       - name: Name, and sign with Authenticode when the certificate secret exists

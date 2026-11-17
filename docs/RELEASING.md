@@ -118,6 +118,17 @@ derived by `scripts/release/version.sh --android-code`: `(major*10000 + minor*10
 for a final release, or `+ N` for `-rc.N`, so it always increases. `dx` hard-codes `versionCode = 1`,
 so `scripts/release/android-apk.sh` patches the generated Gradle file and runs Gradle itself.
 
+The Windows NSIS installer needs a purely numeric four-part `VIProductVersion`, which dx fills with
+the SemVer version and so rejects `-rc.N`. `scripts/release/version.sh --windows-version` gives
+`major.minor.patch.N` (`0.1.0-rc.1` is `0.1.0.1`, `0.1.0` is `0.1.0.99`, the same suffix rule as the
+Android `versionCode`). `scripts/release/windows-nsis.sh` writes that into
+`apps/nuvoletta-app/windows/installer.nsi` from `installer.nsi.in`, which is dx's own template with
+that single line changed; `Dioxus.toml` points `[bundle.windows.nsis] template` at it. Only the
+file-properties resource uses this number: the displayed and registered version stays `0.1.0-rc.1`
+(the MSI already derives its own numeric version). When you bump `dioxus-cli`, compare
+`installer.nsi.in` with the new built-in template. Run `windows-nsis.sh` before any local Windows
+`dx bundle`.
+
 ### Release notes
 
 `git-cliff` (configured in `cliff.toml`) groups the Conventional Commit subjects since the previous
@@ -149,9 +160,10 @@ built from different checkout paths.
 
 What is **not** covered, so do not read more into it:
 
-- Only the Linux tarball is checked. `.AppImage`, `.deb` (bundled by `dx`, which embeds timestamps
-  and the build host's shared libraries), the macOS, Windows and Android files are not claimed to be
-  reproducible. The Android APK is also signed, and signatures differ per signing key.
+- Only the Linux tarball is reproducible and checked. The release workflow builds the `.AppImage`
+  and `.deb` with `SOURCE_DATE_EPOCH` unset, because linuxdeploy's `mksquashfs` aborts when it is set.
+  Those two (bundled by `dx`, which embeds timestamps and the build host's shared libraries) and
+  the macOS, Windows and Android files are not claimed to be reproducible. The Android APK is also signed, and signatures differ per signing key.
 - The check runs on one machine with one toolchain, one linker and one set of system libraries.
   Building on another distribution or glibc version can give different bytes. A fully independent
   rebuild needs a pinned container image, which is future work.
