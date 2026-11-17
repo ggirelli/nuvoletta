@@ -632,31 +632,35 @@ fn a_plaintext_export_restores_into_a_brand_new_vault_that_syncs_on_its_own() {
 }
 
 #[test]
-fn a_corrupted_journal_is_reported_not_guessed_and_deleting_it_recovers() {
+fn a_corrupted_journal_is_set_aside_reported_and_sync_continues_without_loss() {
     let (tmp, shared) = folder_setup();
     let (mut a, _key) = first_with_folder(tmp.path(), &shared, "a");
     let n = a.write("Note", "one");
     a.sync_ok();
     a.set_body(n, "two, not synced yet");
     a.app.lock(false).unwrap();
-    let journal = a.dir.join(".nuvoletta/sync-state/journal");
-    let len = fs::read(&journal).unwrap().len();
-    fs::write(&journal, vec![0x5A; len]).unwrap();
+    let state_dir = a.dir.join(".nuvoletta/sync-state");
+    let journal = state_dir.join("journal");
+    let damaged = fs::read(&journal).unwrap();
+    fs::write(&journal, vec![0x5A; damaged.len()]).unwrap();
     a.app.unlock_with_passphrase(PW).unwrap();
 
-    // Sync refuses to run on a journal it cannot verify (it may hold unsent entries) and says
-    // so; the notes themselves are untouched.
-    assert!(
-        a.app.sync_now().is_err()
-            || !matches!(a.app.wait_sync(), Some(SyncEvent::Finished(f)) if f.ok)
-    );
+    // Sync does not stop: the damaged file is kept aside (never deleted), the user is told, the
+    // notes are untouched and the unsent edit is found again by the scan and sent.
+    a.sync_ok();
     assert_eq!(a.bodies()["Note"], "two, not synced yet");
-
-    // Recovery: remove the journal. The next scan finds the note whose revision is not in the
-    // own log and sends it again; nothing is lost.
-    a.app.lock(false).unwrap();
-    fs::remove_file(&journal).unwrap();
-    a.app.unlock_with_passphrase(PW).unwrap();
+    let aside: Vec<_> = fs::read_dir(&state_dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .filter(|n| n.starts_with("journal.corrupt-"))
+        .collect();
+    assert_eq!(aside.len(), 1, "{aside:?}");
+    assert_eq!(
+        fs::read(state_dir.join(&aside[0])).unwrap(),
+        vec![0x5A; damaged.len()]
+    );
+    assert!(a.notices().contains(&"journal-reset".to_owned()));
+    // A second cycle is quiet and the new journal is healthy.
     a.sync_ok();
     let b_dir = tmp.path().join("b");
     install_header(&b_dir, &folder_header(&shared, 1));

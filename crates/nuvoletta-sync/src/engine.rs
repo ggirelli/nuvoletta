@@ -144,6 +144,12 @@ pub enum Warning {
         /// Generation named by the file.
         generation: u32,
     },
+    /// The local journal could not be read and was moved aside; the sync continued with an
+    /// empty one, so unsent edits are found again by the scan (nothing is lost).
+    JournalReset {
+        /// File name (in the sync-state folder) the damaged journal was moved to.
+        moved_to: String,
+    },
 }
 
 /// An entry that authenticated but is not valid; reported, never applied.
@@ -312,6 +318,11 @@ impl<P: Provider> Syncer<P> {
     pub fn sync(&mut self, vault: &mut Unlocked) -> Result<SyncReport> {
         self.report = SyncReport::default();
         self.touched.clear();
+        if let Some(moved_to) = self.state.journal_moved_to.take() {
+            self.report
+                .warnings
+                .push(Warning::JournalReset { moved_to });
+        }
         self.ensure_own_chain(vault)?;
         self.sync_headers(vault)?;
         if !self.state.rebuilt {

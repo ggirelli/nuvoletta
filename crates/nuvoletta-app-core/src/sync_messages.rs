@@ -145,6 +145,17 @@ pub(crate) fn describe_warning(w: &Warning, now_ms: i64) -> SyncNotice {
                  .nuvoletta/vault-header in this vault."
             ),
         ),
+        Warning::JournalReset { moved_to } => (
+            "journal-reset",
+            "The list of unsent changes was damaged and set aside".to_owned(),
+            format!(
+                "The file that tracks this device's unsent changes failed verification. It was kept as \
+                 .nuvoletta/sync-state/{moved_to} and sync started a fresh one: your notes were not changed, and \
+                 changes not yet sent are found again and sent by this sync. Nothing was lost. If it happens \
+                 repeatedly, check the disk and keep the set-aside file when reporting it; you may delete it \
+                 once you have checked that your recent edits arrived."
+            ),
+        ),
         Warning::HeaderRollback { seen, remote } => (
             "header-rollback",
             "The sync folder has an older vault header".to_owned(),
