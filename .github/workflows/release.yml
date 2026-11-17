@@ -258,6 +258,11 @@ jobs:
           range=--unreleased
           [ "$IS_TAG" = true ] && range=--latest
           {
+            echo "> [!IMPORTANT]"
+            echo "> Nuvoletta is fully vibe coded: an AI assistant (Claude) writes all of its code. It is tested, not audited;"
+            echo "> do not rely on it for sensitive notes yet, and keep backups. Read the"
+            echo "> [disclaimer](https://github.com/ggirelli/nuvoletta/blob/main/DISCLAIMER.md)."
+            echo
             echo "Verify every download before you run it: see **Verify your download** at"
             echo "https://ggirelli.github.io/nuvoletta/RELEASING/#verify-your-download."
             echo

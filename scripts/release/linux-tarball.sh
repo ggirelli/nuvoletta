@@ -25,8 +25,11 @@ trap 'rm -rf "$stage"' EXIT
 mkdir "$stage/$name"
 cp -r "$app_dir/." "$stage/$name/"
 cp LICENSE "$stage/$name/LICENSE"
+cp DISCLAIMER.md "$stage/$name/DISCLAIMER.md"
 cat > "$stage/$name/README.txt" <<TXT
 Nuvoletta ${version} for Linux (x86_64).
+
+Nuvoletta is fully vibe coded and not audited; read DISCLAIMER.md first.
 
 Run ./nuvoletta-app. It needs GTK 3 and WebKitGTK 4.1 installed on the system.
 Verify this download before running it: https://ggirelli.github.io/nuvoletta/RELEASING/

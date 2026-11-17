@@ -50,6 +50,7 @@ extra_css:
 nav:
   - Home: index.md
   - Plan: plan.md
+  - Disclaimer: disclaimer.md
   - User guide:
       - Overview: user/index.md
       - Getting started: user/getting-started.md
