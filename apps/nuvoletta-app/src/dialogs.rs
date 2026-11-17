@@ -5,6 +5,7 @@ use crate::core::Core;
 use crate::picker::{PathField, Wordmark};
 use crate::ui::Ui;
 use dioxus::prelude::*;
+use nuvoletta_app_core::App;
 use nuvoletta_core::NoteId;
 use std::path::PathBuf;
 
@@ -225,6 +226,15 @@ pub fn Settings() -> Element {
                     }
                 },
                 h1 { id: "set-title", "Settings" }
+
+                if let Some((fp, generation)) = core.read(App::vault_identity) {
+                    section {
+                        h2 { "This vault" }
+                        p { "Fingerprint: " code { "{fp}" } }
+                        p { "Header generation: {generation}" }
+                        p { class: "hint", "Compare these with what a new device shows when you join this vault from it. The generation goes up each time the passphrase or recovery key changes." }
+                    }
+                }
 
                 section {
                     h2 { "Auto-lock" }

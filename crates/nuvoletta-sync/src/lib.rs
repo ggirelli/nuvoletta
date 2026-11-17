@@ -16,6 +16,7 @@ pub mod folder;
 mod fork;
 mod gc;
 pub mod graph;
+pub mod header_scan;
 pub mod ids;
 mod local;
 pub mod log;
@@ -33,6 +34,7 @@ pub use engine::{InvalidEntry, StrayFile, StrayKind, SyncConfig, SyncReport, Syn
 pub use error::{Error, Result};
 pub use folder::FolderProvider;
 pub use gc::{DEFAULT_KEEP_REVISIONS, GcKept, GcOptions, GcReport, GcSkip};
+pub use header_scan::{HeaderScan, IgnoredHeader, VaultGroup, fingerprint, scan_headers};
 pub use ids::{DeviceId, Hash32, Id16, RevId};
 pub use provider::{Capabilities, Provider, ProviderError, RemoteEntry};
 pub use resolve::{Conflict, HeadInfo, NoteStatus};

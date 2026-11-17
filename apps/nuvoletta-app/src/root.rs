@@ -5,6 +5,7 @@ use crate::bridge;
 use crate::core::Core;
 use crate::dialogs::{ForcedPassphrase, LockBlocked, RecoveryScreen, Settings};
 use crate::editor::Workspace;
+use crate::join::{JoinProgress, JoinScreen};
 use crate::picker::{Picker, Unlock};
 use crate::platform::shell::tao::event::{Event, WindowEvent};
 use crate::platform::shell::use_wry_event_handler;
@@ -43,6 +44,7 @@ pub fn Root() -> Element {
         sync: Signal::new(false),
         conflict: Signal::new(None),
         trash: Signal::new(false),
+        join: Signal::new(false),
         clock_ms: Signal::new(crate::sync::wall_ms()),
     });
 
@@ -155,6 +157,8 @@ pub fn Root() -> Element {
 
     let phase = core.read(nuvoletta_app_core::App::phase);
     let must_change = core.read(nuvoletta_app_core::App::must_change_passphrase);
+    let joining = core.read(nuvoletta_app_core::App::join_in_progress);
+    let join_screen = *ui.join.read();
     let key_pending = ui.recovery_key.read().is_some();
     let settings_open = *ui.settings.read();
     let sync_open = *ui.sync.read();
@@ -188,10 +192,14 @@ pub fn Root() -> Element {
             RecoveryScreen {}
         } else {
             match phase {
-                Phase::NoVault => rsx! { Picker {} },
+                Phase::NoVault => rsx! {
+                    if join_screen { JoinScreen {} } else { Picker {} }
+                },
                 Phase::Locked => rsx! { Unlock {} },
                 Phase::Unlocked => rsx! {
-                    if must_change {
+                    if joining {
+                        JoinProgress {}
+                    } else if must_change {
                         ForcedPassphrase {}
                     } else {
                         div { class: "app",

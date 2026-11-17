@@ -70,6 +70,24 @@ impl Subkeys {
         }
     }
 
+    /// Whether `other` was derived from the same DEK and vault id (constant time). Every subkey
+    /// is a one-way function of the DEK, so equal subkeys mean an equal DEK without the DEK
+    /// itself leaving its type. Used to bind a candidate header to the vault a device already
+    /// holds.
+    #[must_use]
+    pub fn same_keys(&self, other: &Self) -> bool {
+        use subtle::ConstantTimeEq;
+        let a = [&self.k_header, &self.k_note, &self.k_log, &self.k_local];
+        let b = [&other.k_header, &other.k_note, &other.k_log, &other.k_local];
+        let keys_equal = a
+            .iter()
+            .zip(b)
+            .fold(subtle::Choice::from(1), |acc, (x, y)| {
+                acc & x.as_slice().ct_eq(y.as_slice())
+            });
+        bool::from(keys_equal & self.vault_id.as_slice().ct_eq(other.vault_id.as_slice()))
+    }
+
     /// The vault id these keys belong to.
     #[must_use]
     pub fn vault_id(&self) -> &[u8; VAULT_ID_LEN] {

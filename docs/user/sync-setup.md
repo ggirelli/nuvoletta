@@ -24,8 +24,12 @@ cannot destroy your synced copy. Step by step: [WebDAV setup](../WEBDAV.md).
 
 ## Adding another device
 
-A new device needs the vault **header** and your passphrase (or recovery key). See
-[Lost or stolen device](device-loss.md#joining-a-new-device) for the steps.
+On the new device choose **Join an existing vault** on the first screen, point it at the same sync
+location (the folder your sync tool keeps, or the WebDAV address and account), and type the vault's
+current passphrase (or recovery key). The app finds the vault header itself, shows the vault's
+fingerprint and header generation for you to compare with *Settings* on a device that already has
+the vault, and then fetches your notes. See
+[Lost or stolen device](device-loss.md#joining-a-new-device) for the steps and what to watch for.
 
 ## What sync does not do
 

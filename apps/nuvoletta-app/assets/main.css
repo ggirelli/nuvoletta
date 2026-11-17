@@ -299,3 +299,5 @@ pre.diff .removed { background: var(--nv-danger-bg); }
 /* Large text: let the top bar and dialogs wrap instead of clipping. */
 .topbar { flex-wrap: wrap; }
 .syncbtn { max-width: min(16em, 100%); }
+.vault-choices { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 8px; }
+.vault-choices button { width: 100%; text-align: left; }

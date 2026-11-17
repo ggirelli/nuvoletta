@@ -780,6 +780,11 @@ impl App {
             Ok(report) => {
                 s.sync.problem = None;
                 s.sync.last_synced_ms = Some(now_ms());
+                // The first sync of a joined device succeeded: the join is complete. A join with
+                // the recovery key now requires a new passphrase (ADR 0008, O4).
+                if let Some(j) = s.joining.take() {
+                    s.must_change_passphrase |= j.recovery_key;
+                }
                 let mut changed = false;
                 for w in &report.warnings {
                     changed |= add_notice(&mut s.sync.notices, describe_warning(w, now_ms()));

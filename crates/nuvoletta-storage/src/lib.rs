@@ -9,6 +9,7 @@
 
 pub mod error;
 pub mod fsutil;
+pub mod header_change;
 pub mod layout;
 pub mod lock;
 pub mod locked;
@@ -17,6 +18,7 @@ pub mod trash;
 pub mod unlocked;
 
 pub use error::{Error, Result};
+pub use header_change::{Cleanup, Secret, remove_unused_vault};
 pub use locked::Locked;
 pub use trash::TrashedNote;
 pub use unlocked::{Issue, IssueKind, NoteSummary, Unlocked};

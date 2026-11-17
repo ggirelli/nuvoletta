@@ -46,6 +46,8 @@ operated on. Sync state (`SYNC_PROTOCOL.md`, Phase 4) is described in section 4.
 | note create / update / delete | create fails on an existing id; update seals a new revision (fresh `object_id` and nonce) and replaces the file; delete unlinks it |
 | change passphrase | new header via the crypto crate, verified to unlock, then atomically replaces the old one; notes untouched |
 | rotate recovery key | needs the current passphrase; same mechanics |
+| join | for a device that has no vault: takes a vault already opened from a header found on a provider (`Secret::open`), creates `.nuvoletta/` and an empty `notes/`, writes exactly the header bytes that verified; fails if a header exists |
+| remove unused vault | undoes a failed or cancelled join: removes `.nuvoletta/` and `notes/` only if there is no note file, nothing in `.nuvoletta/trash` besides its index, and no symlink; removes the directory itself only if that leaves it empty |
 
 Atomic write: create `.tmp-<random>` in the destination directory (`create_new`), write, `fsync`
 the file, `rename` over the destination, `fsync` the directory (Unix; directories cannot be

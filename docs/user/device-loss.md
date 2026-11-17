@@ -46,19 +46,36 @@ with the old one until you move them over (see
 You need the passphrase (or recovery key) and access to the sync location. You do not need the old
 device.
 
-1. On the new device, set up the same sync location (the folder with your sync tool, or the WebDAV
-   address and account).
-2. Get the **vault header**: it is the file `h/<generation>.nvhdr` in the sync location with the
-   highest number (for WebDAV, download it with the server's web interface; for a folder it is just
-   there). Create an empty folder for the new vault, inside it a folder named `.nuvoletta`, and copy
-   the header into it under the name **`vault-header`**.
-3. In nuvoletta choose *Open an existing vault* on that folder and unlock with the passphrase.
-4. Choose the sync location (*Sync*) and sync. All notes arrive. This is tested end to end for both a
-   synced folder and WebDAV.
+1. On the first screen choose **Join an existing vault**.
+2. Choose where the vault is synced: the folder your sync tool keeps (desktop), or the WebDAV
+   address and account (desktop and Android). Wait until your sync tool has finished bringing the
+   folder's `h` folder to this device. If the location holds more than one vault, pick yours by its
+   **fingerprint**, which you can read in *Settings* on a device that has the vault.
+3. Type the vault's **current** passphrase, or its recovery key. The app opens the vault header
+   with it before anything is created.
+4. Compare the **fingerprint** and **header generation** shown with *Settings, This vault* on
+   another device, then choose where the vault goes on this device and confirm. A *lower*
+   generation than on your other device means the sync location offers an older passphrase setting
+   (see below): do not continue if you changed the passphrase because the old one may have leaked.
+5. The app fetches your notes (the first sync). If you joined with the recovery key, it then asks
+   you for a new passphrase. If the first sync fails you can try again or cancel; cancelling removes
+   the new vault from this device unless it already holds notes, in which case it is left in place
+   and the app tells you where.
 
-!!! note "Header copy"
-    There is no one-click "join" button yet; the header copy is a manual step. The header contains
-    no note content, only the parameters and wrapped keys that the passphrase opens.
+!!! warning "A provider can serve an old header"
+    A device that has never seen the vault cannot tell a current header from an old genuine one: a
+    storage provider (or anyone who controls the location) could offer the header from before you
+    changed your passphrase, and then the **old** passphrase opens the vault on the new device. The
+    generation number you compare in step 4 is how you notice. Changing the passphrase does not
+    change the data key, so this is also why a leaked passphrase plus a copy of the vault stays
+    dangerous (see the steps above).
+
+!!! note "If the app cannot do it"
+    Joining by hand still works: create an empty folder for the vault with a folder named
+    `.nuvoletta` inside, copy the sync location's `h/<generation>.nvhdr` with the highest number into
+    it under the name `vault-header`, choose *Open an existing vault* on that folder, unlock, then
+    choose the sync location in *Sync*. The header contains no note content, only the parameters and
+    wrapped keys that the passphrase opens.
 
 If you lose every device **and** the sync location, restore from a [backup](backup-and-restore.md).
 If you lose the sync location but still have a device, set up a fresh location: the device re-sends
