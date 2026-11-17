@@ -27,6 +27,10 @@ pub fn Sidebar() -> Element {
         let hits = core.read(|a| a.search(&query, 50));
         rsx! {
             h2 { "Results" }
+            // Announce the outcome of the search to screen readers (the list itself is not live).
+            p { class: "sr-only", role: "status",
+                if hits.is_empty() { "No notes match." } else { "{hits.len()} notes found." }
+            }
             if hits.is_empty() {
                 p { class: "hint", "No notes match." }
             }
@@ -85,11 +89,11 @@ pub fn Sidebar() -> Element {
             if rows.is_empty() {
                 p { class: "hint", "No notes yet. Use New note to write the first one." }
             }
-            ul { role: "tree", "aria-label": "Notes by folder",
+            ul { "aria-label": "Notes by folder",
                 for (i, row) in rows.into_iter().enumerate() {
                     match row {
                         TreeRow::Folder { depth, name, path } => rsx! {
-                            li { key: "f{i}", role: "treeitem", class: "folder depth-{depth.min(8)}",
+                            li { key: "f{i}", class: "folder depth-{depth.min(8)}",
                                 span { "{name}/" }
                                 button {
                                     class: "link",
@@ -104,7 +108,7 @@ pub fn Sidebar() -> Element {
                             }
                         },
                         TreeRow::Note { depth, label, id } => rsx! {
-                            li { key: "n{id}", role: "treeitem", class: "depth-{depth.min(8)}",
+                            li { key: "n{id}", class: "depth-{depth.min(8)}",
                                 div { class: "tree-item",
                                     button {
                                         class: "note",

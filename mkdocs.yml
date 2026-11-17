@@ -76,6 +76,9 @@ nav:
           - ADR 0005: ADR/0005-sync-protocol.md
           - ADR 0006: ADR/0006-android-app.md
           - ADR 0007: ADR/0007-webdav-backend.md
+  - Quality:
+      - Performance and battery: PERFORMANCE.md
+      - Accessibility: ACCESSIBILITY.md
   - Development: development.md
 
 markdown_extensions:

@@ -66,7 +66,11 @@ impl SearchIndex {
         }
         let mut list = Vec::with_capacity(per_term.len());
         for (t, mask) in per_term {
-            self.postings.entry(t.clone()).or_default().insert(id, mask);
+            if let Some(docs) = self.postings.get_mut(&t) {
+                docs.insert(id, mask);
+            } else {
+                self.postings.insert(t.clone(), HashMap::from([(id, mask)]));
+            }
             list.push(t);
         }
         self.doc_terms.insert(id, list);
