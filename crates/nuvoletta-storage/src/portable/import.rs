@@ -2,10 +2,10 @@
 
 use super::frontmatter::{self, FrontMatter, Split};
 use crate::error::{Error, Result};
-use crate::fsutil::ensure_real_dir;
+use crate::fsutil::{ensure_real_dir, open_nofollow};
 use crate::unlocked::Unlocked;
 use nuvoletta_core::{MAX_BODY, Note, NoteId, NotePath, now_ms};
-use std::fs::{self, File};
+use std::fs;
 use std::io::Read;
 use std::path::Path;
 use zeroize::Zeroize;
@@ -214,16 +214,21 @@ enum Outcome {
 }
 
 fn read_text(path: &Path) -> std::result::Result<String, SkipReason> {
-    let meta = fs::symlink_metadata(path).map_err(|_| SkipReason::Unreadable)?;
-    if meta.file_type().is_symlink() {
-        return Err(SkipReason::Symlink);
+    // Open first (never following a symlink), then judge the handle: no check/use race.
+    let f = open_nofollow(path).map_err(|e| match e {
+        crate::Error::UnsafeEntry("symlink") => SkipReason::Symlink,
+        _ => SkipReason::Unreadable,
+    })?;
+    let meta = f.metadata().map_err(|_| SkipReason::Unreadable)?;
+    if !meta.is_file() {
+        return Err(SkipReason::Unreadable);
     }
     if meta.len() > MAX_FILE {
         return Err(SkipReason::TooLarge);
     }
     let mut buf = Vec::with_capacity(usize::try_from(meta.len()).unwrap_or(0));
-    File::open(path)
-        .and_then(|f| f.take(MAX_FILE + 1).read_to_end(&mut buf))
+    f.take(MAX_FILE + 1)
+        .read_to_end(&mut buf)
         .map_err(|_| SkipReason::Unreadable)?;
     if buf.len() as u64 > MAX_FILE {
         buf.zeroize();

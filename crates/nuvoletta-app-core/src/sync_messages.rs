@@ -91,6 +91,17 @@ pub(crate) fn describe_warning(w: &Warning, now_ms: i64) -> SyncNotice {
                 short(device)
             ),
         ),
+        Warning::SegmentUnreadable { device, first_seq } => (
+            "segment-unreadable",
+            "A history file is damaged or forged".to_owned(),
+            format!(
+                "The history file of device {} starting at entry {first_seq} does not pass verification and \
+                 has stayed that way for several cycles. Other files are not affected. A sync tool may still \
+                 be copying it; if it persists, the file may have been truncated, corrupted or planted by \
+                 someone who can write to the folder, or the storage provider may be withholding the real file.",
+                short(device)
+            ),
+        ),
         Warning::ObjectUnavailable { rev } => (
             "object-unavailable",
             "A note version is missing or corrupted".to_owned(),
@@ -127,8 +138,11 @@ pub(crate) fn describe_warning(w: &Warning, now_ms: i64) -> SyncNotice {
             "header-newer",
             "The passphrase or recovery key was changed elsewhere".to_owned(),
             format!(
-                "Another device published vault header generation {generation}. Lock this vault and unlock it \
-                 again with the new passphrase."
+                "Another device published vault header generation {generation} (its integrity was verified \
+                 with this vault's keys). This device does not adopt a newer header automatically yet, so it \
+                 keeps the old one and the old passphrase still unlocks it here. To use the new passphrase on \
+                 this device, close the app and copy the newest file of the sync folder's h folder over \
+                 .nuvoletta/vault-header in this vault."
             ),
         ),
         Warning::HeaderRollback { seen, remote } => (
@@ -143,8 +157,8 @@ pub(crate) fn describe_warning(w: &Warning, now_ms: i64) -> SyncNotice {
             "header-invalid",
             "A vault header in the sync folder is invalid".to_owned(),
             format!(
-                "The header file for generation {generation} is damaged, belongs to another vault, or differs \
-                 from this vault's. Check that the sync folder is the right one."
+                "The header file for generation {generation} is damaged, belongs to another vault, fails its \
+                 integrity check under this vault's keys, or differs from this vault's. It was ignored. Check that the sync folder is the right one."
             ),
         ),
     };

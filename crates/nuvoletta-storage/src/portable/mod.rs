@@ -68,7 +68,9 @@ pub(crate) fn canonical_lenient(path: &Path) -> std::io::Result<PathBuf> {
     }
 }
 
-pub use export::{ExportReport, ExportedNote, FailedNote, export_markdown};
+pub use export::{
+    ExportReport, ExportedNote, FailedNote, export_markdown, export_markdown_avoiding,
+};
 pub use import::{
     ImportConflict, ImportReport, ImportedNote, SkipReason, SkippedFile, import_markdown,
 };

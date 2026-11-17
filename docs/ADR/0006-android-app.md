@@ -134,8 +134,10 @@ Assessed from documentation only; nothing was built (no macOS or Xcode here).
 
 ## Not done (Phase 6 note on credentials)
 
-No Android Keystore or biometric unlock: passphrase-only, per PLAN.md section 11. There are no
-stored credentials to protect (no network backend).
+No Android Keystore or biometric unlock: passphrase-only, per PLAN.md section 11. (Update: the
+WebDAV backend of Phase 5 now stores credentials on Android too, sealed with the vault's local
+key and unreadable while the vault is locked, see ADR 0007; `INTERNET` is then also used for
+real network traffic when WebDAV sync is switched on.)
 
 ## Consequences
 

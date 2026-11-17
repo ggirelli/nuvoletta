@@ -24,7 +24,7 @@ that address (redirects to other hosts are refused). Everything else is local:
 - Clicking a web link in a note opens it in your **system browser** (that is your browser's traffic,
   started by your click, not nuvoletta's).
 - The synced-folder option does not use the network in the app at all; your sync tool does.
-- On Android the app requests the `INTERNET` permission only for WebDAV.
+- On Android the app requests the `INTERNET` permission for WebDAV, and because Android requires it for the app's own loopback channel to its web view (127.0.0.1 only, nothing leaves the device).
 
 ## What a WebDAV provider (or your sync tool's provider) sees
 

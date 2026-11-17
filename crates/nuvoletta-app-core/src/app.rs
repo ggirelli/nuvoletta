@@ -10,7 +10,9 @@ use crate::tree::{TreeRow, build_tree};
 use nuvoletta_core::{Note, NoteId, NotePath, now_ms};
 use nuvoletta_crypto::{KdfParams, RecoveryKey};
 use nuvoletta_markdown::{Index, RenderOptions, TagCount, render_html};
-use nuvoletta_storage::portable::{ExportReport, ImportReport, export_markdown, import_markdown};
+use nuvoletta_storage::portable::{
+    ExportReport, ImportReport, export_markdown_avoiding, import_markdown,
+};
 use nuvoletta_storage::{Locked, NoteSummary, Unlocked};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -75,8 +77,8 @@ pub struct NoteInfo {
     pub dirty: bool,
     /// Why the last save failed; the buffer is kept.
     pub save_error: Option<String>,
-    /// Sync replaced the stored version while there were unsaved edits; saving replaces the
-    /// synced version (it stays in sync history).
+    /// Sync replaced the stored version while there were unsaved edits; saving keeps both
+    /// versions and shows the note under conflicts.
     pub changed_by_sync: bool,
     /// Bumped when sync replaced the editor content; the editor must reload it.
     pub generation: u64,
@@ -112,6 +114,10 @@ pub(crate) struct OpenNote {
     pub(crate) save_error: Option<String>,
     /// Sync replaced the stored version while the buffer had unsaved edits (see `sync.rs`).
     pub(crate) changed_by_sync: bool,
+    /// The revision the unsaved edits were typed on, when sync replaced the stored note under
+    /// them: the save is queued as its sibling (a visible conflict), never as a successor of
+    /// the synced revision.
+    pub(crate) sync_base: Option<[u8; 16]>,
     /// Bumped when sync replaces the buffer, so the editor reloads it.
     pub(crate) generation: u64,
 }
@@ -265,6 +271,9 @@ impl App {
     /// The vault is unlocked already, or `dir` is not a valid vault.
     pub fn open_vault(&mut self, dir: &Path) -> Result<()> {
         self.not_unlocked()?;
+        // Release the vault chosen before (its single-instance lock), so choosing the same one
+        // again works; if the new one cannot be opened the picker is shown.
+        self.state = State::NoVault;
         self.state = State::Locked(Box::new(Locked::open(dir)?));
         self.settings.last_vault = Some(dir.to_path_buf());
         Ok(())
@@ -807,10 +816,17 @@ impl App {
     /// [`Error::Unsaved`]; destination errors from storage.
     pub fn export(&mut self, dest: &Path) -> Result<ExportReport> {
         let now = self.clock.now();
+        let synced = self.sync_cfg.folder.clone();
         let s = self.session_mut()?;
         s.flush(now)?;
         s.last_activity = now;
-        Ok(export_markdown(s.vault()?, dest)?)
+        // The synced folder is refused even while sync is switched off: it is still synced by
+        // the external tool, and plaintext must never be written into it.
+        Ok(export_markdown_avoiding(
+            s.vault()?,
+            dest,
+            synced.as_deref().as_slice(),
+        )?)
     }
 
     /// Import a folder of `.md` files, then rebuild the index.
@@ -839,6 +855,7 @@ impl OpenNote {
             last_edit: now,
             save_error: None,
             changed_by_sync: false,
+            sync_base: None,
             generation: 0,
         }
     }
@@ -906,6 +923,17 @@ impl Session {
             Ok(()) => {
                 self.sync.changed_at = Some(now);
                 self.index.upsert(&n);
+                if let Some(base) = o.sync_base
+                    && let (Some(syncer), Some(vault)) =
+                        (self.sync.syncer.as_deref_mut(), self.vault.as_ref())
+                    && let Err(e) = syncer.note_edited_on(vault, &n.id, base)
+                {
+                    let e = Error::Sync(e.to_string());
+                    o.note = n;
+                    o.save_error = Some(e.user_message());
+                    return Err(e);
+                }
+                o.sync_base = None;
                 o.note = n;
                 o.save_error = None;
                 o.changed_by_sync = false;

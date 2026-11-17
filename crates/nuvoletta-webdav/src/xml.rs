@@ -265,6 +265,12 @@ mod tests {
     fn http_dates() {
         assert_eq!(parse_http_date("Thu, 01 Jan 1970 00:00:00 GMT"), Some(0));
         assert_eq!(parse_http_date("garbage"), None);
+        // A hostile year must not overflow the day arithmetic.
+        assert_eq!(
+            parse_http_date("Tue, 01 Nov 9223372036854775807 08:12:31 GMT"),
+            None
+        );
+        assert_eq!(parse_http_date("Tue, 01 Nov 0 08:12:31 GMT"), None);
         assert_eq!(parse_http_date("Tue, 99 Nov 1994 08:12:31 GMT"), None);
     }
 }

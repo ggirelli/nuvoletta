@@ -170,6 +170,11 @@ impl Device {
     /// Simulate a process restart: drop the syncer and reload everything from disk.
     pub fn restart(&mut self) {
         let provider = Faulty::new(&self.remote);
+        // A vault is open once at a time: release this one (a throwaway vault takes its place)
+        // before reopening, as a real restart would.
+        let parking = tempfile::tempdir().unwrap();
+        let (placeholder, _) = Locked::create(parking.path(), PASSPHRASE, FAST).unwrap();
+        drop(std::mem::replace(&mut self.vault, placeholder));
         let locked = Locked::open(&self.dir).unwrap();
         self.vault = locked.unlock_with_passphrase(PASSPHRASE).unwrap();
         self.syncer = Syncer::open_with(&self.vault, provider, config()).unwrap();

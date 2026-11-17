@@ -63,6 +63,7 @@ nav:
   - WebDAV setup: WEBDAV.md
   - Design:
       - Threat model: THREAT_MODEL.md
+      - Internal security review: SECURITY_REVIEW.md
       - Crypto format: CRYPTO_FORMAT.md
       - Sync protocol: SYNC_PROTOCOL.md
       - Storage format: STORAGE_FORMAT.md

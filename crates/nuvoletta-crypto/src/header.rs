@@ -142,6 +142,20 @@ impl VaultHeader {
         arr(&self.bytes, OFF_VAULT_ID)
     }
 
+    /// Whether `header_mac` verifies under the header key of `keys` (constant time). An
+    /// unlocked device uses this to authenticate other header files of the same vault without
+    /// a passphrase: only a holder of the DEK can produce a valid MAC.
+    #[must_use]
+    pub fn verify_mac(&self, keys: &Subkeys) -> bool {
+        if keys.vault_id() != &self.vault_id() {
+            return false;
+        }
+        new_mac(&keys.k_header).is_ok_and(|mut mac| {
+            mac.update(&self.bytes[..OFF_MAC]);
+            mac.verify_slice(&self.bytes[OFF_MAC..]).is_ok()
+        })
+    }
+
     /// KDF parameters.
     #[must_use]
     pub fn kdf_params(&self) -> KdfParams {

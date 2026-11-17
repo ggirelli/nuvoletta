@@ -81,12 +81,41 @@ pub fn sync_dir(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Read a regular file, refusing symlinks and anything larger than `max` bytes.
-pub fn read_regular(path: &Path, max: u64) -> Result<Vec<u8>> {
-    let meta = fs::symlink_metadata(path)?;
-    if meta.file_type().is_symlink() {
-        return Err(Error::UnsafeEntry("symlink"));
+/// Open `path` for reading, refusing a symlink as the final component. On Unix the check is part
+/// of the `open` call itself (`O_NOFOLLOW`), so a file swapped for a symlink between a check and
+/// the open cannot be followed; `O_NONBLOCK` keeps a swapped-in FIFO from blocking the open.
+/// Elsewhere the check is a separate step and the residual race is accepted (no such platform is
+/// a supported target for a synced vault folder).
+pub fn open_nofollow(path: &Path) -> Result<File> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(path)
+            .map_err(|e| {
+                if e.raw_os_error() == Some(libc::ELOOP) {
+                    Error::UnsafeEntry("symlink")
+                } else {
+                    Error::Io(e)
+                }
+            })
     }
+    #[cfg(not(unix))]
+    {
+        if fs::symlink_metadata(path)?.file_type().is_symlink() {
+            return Err(Error::UnsafeEntry("symlink"));
+        }
+        Ok(File::open(path)?)
+    }
+}
+
+/// Read a regular file, refusing symlinks and anything larger than `max` bytes. The type and the
+/// size are taken from the opened handle, not from the path, so they describe what is read.
+pub fn read_regular(path: &Path, max: u64) -> Result<Vec<u8>> {
+    let f = open_nofollow(path)?;
+    let meta = f.metadata()?;
     if !meta.is_file() {
         return Err(Error::UnsafeEntry("not a regular file"));
     }
@@ -94,7 +123,10 @@ pub fn read_regular(path: &Path, max: u64) -> Result<Vec<u8>> {
         return Err(Error::UnsafeEntry("file too large"));
     }
     let mut buf = Vec::with_capacity(usize::try_from(meta.len()).unwrap_or(0));
-    File::open(path)?.take(max + 1).read_to_end(&mut buf)?;
+    f.take(max.saturating_add(1)).read_to_end(&mut buf)?;
+    if buf.len() as u64 > max {
+        return Err(Error::UnsafeEntry("file too large"));
+    }
     Ok(buf)
 }
 
@@ -125,4 +157,53 @@ pub fn clean_temp_files(dir: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn symlinks_are_refused_at_open_time_even_when_valid_or_dangling() {
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("real");
+        fs::write(&real, b"x").unwrap();
+        let link = tmp.path().join("link");
+        symlink(&real, &link).unwrap();
+        assert!(matches!(
+            read_regular(&link, 10),
+            Err(Error::UnsafeEntry("symlink"))
+        ));
+        let dangling = tmp.path().join("dangling");
+        symlink(tmp.path().join("missing"), &dangling).unwrap();
+        assert!(matches!(
+            read_regular(&dangling, 10),
+            Err(Error::UnsafeEntry("symlink"))
+        ));
+        assert_eq!(read_regular(&real, 10).unwrap(), b"x");
+    }
+
+    #[test]
+    fn a_fifo_is_refused_without_blocking_and_size_is_bounded() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fifo = tmp.path().join("fifo");
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert!(matches!(
+            read_regular(&fifo, 10),
+            Err(Error::UnsafeEntry("not a regular file"))
+        ));
+        let big = tmp.path().join("big");
+        fs::write(&big, [0u8; 11]).unwrap();
+        assert!(matches!(
+            read_regular(&big, 10),
+            Err(Error::UnsafeEntry("file too large"))
+        ));
+    }
 }

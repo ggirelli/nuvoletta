@@ -98,6 +98,15 @@ Anything unexpected (an odd status, a timeout in the middle) counts as "unknown"
 refused. The test files are not Nuvoletta files; every device ignores them and lists them as stray.
 A server that cannot delete keeps about five small test files for good.
 
+**Limits of the check.** It probes the main folder and `h/`, `d/`, `o/`, but not the sub-folders
+that Nuvoletta creates later (`d/<device>/l/`, `o/xx/`), and it never tries to delete or move a
+whole folder. On Nextcloud, ownCloud and most NAS shares the account's rights are the same
+everywhere, so this is enough. On servers with per-folder or owner-based rules (Apache
+`<Location>`/`<LimitExcept>` blocks, ACLs that give a folder's creator extra rights) a stolen password
+could possibly delete or move a folder the account itself created. If you run such a server, give the
+account no delete or move right anywhere in the tree and check it by hand once, for example by
+trying to delete a sub-folder of `o/` with a WebDAV client.
+
 ## Interrupted uploads
 
 Most servers (Nextcloud included) commit a file only when the upload is complete. A server that

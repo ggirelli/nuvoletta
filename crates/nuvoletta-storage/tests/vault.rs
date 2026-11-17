@@ -110,6 +110,31 @@ fn lock_returns_a_locked_vault_that_unlocks_again() {
 }
 
 #[test]
+fn a_second_opener_is_refused_until_the_first_is_gone() {
+    let dir = tempfile::tempdir().unwrap();
+    let (v, _) = create(dir.path());
+    assert!(matches!(
+        Locked::open(dir.path()).unwrap_err(),
+        Error::VaultInUse
+    ));
+    // Locking keeps the lock: the vault is still open in this process.
+    let locked = v.lock();
+    assert!(matches!(
+        Locked::open(dir.path()).unwrap_err(),
+        Error::VaultInUse
+    ));
+    // A clone of the lock follows the unlocked session; dropping everything releases it.
+    let v = locked.unlock_with_passphrase(PASSPHRASE).unwrap();
+    drop(locked);
+    assert!(matches!(
+        Locked::open(dir.path()).unwrap_err(),
+        Error::VaultInUse
+    ));
+    drop(v);
+    Locked::open(dir.path()).unwrap();
+}
+
+#[test]
 fn recovery_key_unlocks_and_new_passphrase_replaces_the_old_one() {
     let dir = tempfile::tempdir().unwrap();
     let (mut v, rk) = create(dir.path());
@@ -122,6 +147,7 @@ fn recovery_key_unlocks_and_new_passphrase_replaces_the_old_one() {
     assert_eq!(v.read_note(&n.id).unwrap(), n);
     v.change_passphrase("a brand new passphrase", FAST).unwrap();
     drop(v);
+    drop(l);
 
     let l = Locked::open(dir.path()).unwrap();
     assert!(is_unlock_error(
@@ -480,6 +506,41 @@ mod trash {
         assert_eq!(fs::read(live_file(dir.path(), &n.id)).unwrap(), before);
         assert!(v.list_trash().is_empty());
         assert_eq!(v.read_note(&n.id).unwrap().body, "secret body");
+    }
+
+    #[test]
+    fn deleting_a_revived_id_again_keeps_the_older_trashed_version() {
+        let (_dir, mut v, n) = setup();
+        v.delete_note(&n.id).unwrap();
+        // The same id comes back with different content, then is deleted again.
+        let mut again = n.clone();
+        again.title = "Second life".into();
+        v.create_note(&again).unwrap();
+        v.delete_note(&n.id).unwrap();
+        let titles: Vec<String> = v
+            .list_trash()
+            .into_iter()
+            .map(|t| t.summary.title.clone())
+            .collect();
+        assert_eq!(titles.len(), 2, "{titles:?}");
+        assert!(titles.contains(&"Second life".to_string()));
+        assert!(titles.contains(&"Gone (earlier version)".to_string()));
+    }
+
+    #[test]
+    fn deleting_an_identical_copy_again_does_not_duplicate_it() {
+        let (dir, mut v, n) = setup();
+        let bytes = fs::read(live_file(dir.path(), &n.id)).unwrap();
+        v.delete_note(&n.id).unwrap();
+        drop(v);
+        fs::write(live_file(dir.path(), &n.id), &bytes).unwrap();
+        let mut v = Locked::open(dir.path())
+            .unwrap()
+            .unlock_with_passphrase(PASSPHRASE)
+            .unwrap();
+        v.delete_note(&n.id).unwrap();
+        assert_eq!(v.list_trash().len(), 1);
+        assert!(!live_file(dir.path(), &n.id).exists());
     }
 
     #[test]

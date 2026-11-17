@@ -111,6 +111,13 @@ impl Entry {
         if self.seen.as_ref().is_some_and(|s| s.len() > MAX_SEEN) {
             return Err("too many seen positions");
         }
+        if self
+            .seen
+            .as_ref()
+            .is_some_and(|s| s.values().any(|p| p.seq == 0))
+        {
+            return Err("seen position with sequence number zero");
+        }
         match self.kind {
             KIND_PUT => {
                 if self.note_id.is_none() || self.rev_id.is_none() || self.ct_hash.is_none() {
@@ -275,7 +282,7 @@ pub fn open_segment(keys: &Subkeys, bytes: &[u8]) -> Result<ParsedSegment, Segme
             return Err(SegmentError::Malformed("sequence number zero"));
         }
         if let Some(last) = entries.last() {
-            if entry.seq != last.entry.seq + 1 {
+            if last.entry.seq.checked_add(1) != Some(entry.seq) {
                 return Err(SegmentError::Malformed("non-contiguous sequence numbers"));
             }
             if entry.prev != last.hash {
@@ -383,6 +390,18 @@ mod tests {
         d.ct_hash = Some(Hash32::ZERO);
         assert!(d.check().is_err());
         assert!(Entry::body(KIND_CHECKPOINT, 0).check().is_ok());
+        let mut zero = Entry::body(KIND_CHECKPOINT, 0);
+        zero.seen = Some(
+            [(
+                Id16([1; 16]),
+                SeenPos {
+                    seq: 0,
+                    hash: Hash32::ZERO,
+                },
+            )]
+            .into(),
+        );
+        assert!(zero.check().is_err());
         assert!(Entry::body(9, 0).check().is_err());
     }
 

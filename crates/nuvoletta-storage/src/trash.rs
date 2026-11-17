@@ -94,18 +94,55 @@ impl Unlocked {
     }
 
     /// Move a note to the trash. Called by [`Unlocked::delete_note`].
+    ///
+    /// If the trash already holds a *different* version under this id (the id came back to life
+    /// and is deleted again), the older version is kept: it is re-sealed under a fresh id with
+    /// the title suffixed " (earlier version)" and its original deletion time, so both can be
+    /// restored. An identical copy is simply not duplicated.
     pub(crate) fn move_to_trash(&self, id: &NoteId) -> Result<()> {
         self.ensure_trash_dir()?;
         let mut index = self.read_trash_index();
+        let name = note_file_name(id);
+        let from = notes_dir(self.root()).join(&name);
+        let to = self.trash_dir().join(&name);
+        if fs::symlink_metadata(&to).is_ok() {
+            let older = read_regular(&to, MAX_FILE)?;
+            if older == read_regular(&from, MAX_FILE)? {
+                // Same bytes already in the trash: keep the older stamp, drop the live file.
+                fs::remove_file(&from)?;
+                sync_dir(&notes_dir(self.root()))?;
+                return Ok(());
+            }
+            self.rehome_older_trash_copy(id, &older, index.get(id).copied(), &mut index)?;
+        }
         index.insert(*id, now_ms());
         self.write_trash_index(&index)?;
-        let name = note_file_name(id);
-        fs::rename(
-            notes_dir(self.root()).join(&name),
-            self.trash_dir().join(&name),
-        )?;
+        fs::rename(&from, &to)?;
         sync_dir(&self.trash_dir())?;
         sync_dir(&notes_dir(self.root()))
+    }
+
+    /// Re-seal an older trashed version under a new id so a newer deletion of the same id does
+    /// not replace it. An older copy that cannot be decoded is never destroyed: the move is
+    /// refused with the decoding error.
+    fn rehome_older_trash_copy(
+        &self,
+        id: &NoteId,
+        older: &[u8],
+        stamp: Option<i64>,
+        index: &mut BTreeMap<NoteId, i64>,
+    ) -> Result<()> {
+        let (mut note, _) = self.decode_note(id, older)?;
+        note.id = NoteId::generate()?;
+        let plain = note.title.clone();
+        note.title.push_str(" (earlier version)");
+        let (envelope, _) = self.seal_note(&note).or_else(|_| {
+            note.title = plain; // suffix made the title too long
+            self.seal_note(&note)
+        })?;
+        write_atomic(&self.trash_dir(), &note_file_name(&note.id), &envelope)?;
+        index.insert(note.id, stamp.unwrap_or_else(now_ms));
+        Ok(())
     }
 
     /// Notes in the trash, newest deletion first. A note that is also live (for example after a

@@ -179,6 +179,12 @@ pub struct NoteRec {
     #[n(4)]
     #[cbor(skip_if = "Option::is_none")]
     pub applying: Option<RevId>,
+    /// The next local edit of this note was made on top of this older revision (the user kept
+    /// typing while a sync replaced the note): queue it as a sibling of `local_rev`, with this
+    /// revision as its parent, so the two versions show as a conflict.
+    #[n(5)]
+    #[cbor(skip_if = "Option::is_none")]
+    pub edit_base: Option<RevId>,
 }
 
 /// An entry of the last remote listing.
@@ -257,6 +263,11 @@ pub struct Pending {
     #[n(4)]
     #[cbor(default)]
     pub orphans: BTreeMap<RevId, i64>,
+    /// Protocol-named log segments that do not authenticate, by remote name: after a few
+    /// cycles they are reported as possibly corrupted or withheld.
+    #[n(5)]
+    #[cbor(default)]
+    pub unreadable: BTreeMap<String, Retry>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -418,7 +429,11 @@ impl State {
             .ok()
             .flatten()
             .unwrap_or_default();
-        let max_header_gen = load_file::<u32>(dir, keys, "max-header-gen")
+        // `max-header-gen` (before the header files were authenticated) may hold a generation
+        // that came from a forged file name; it is dropped, and only a MAC-verified generation
+        // is recorded under the new name.
+        drop(fs::remove_file(dir.join("max-header-gen")));
+        let max_header_gen = load_file::<u32>(dir, keys, "verified-header-gen")
             .ok()
             .flatten()
             .unwrap_or(0);
@@ -500,8 +515,8 @@ impl State {
         if self.dirty.header_gen {
             write_atomic(
                 &d,
-                "max-header-gen",
-                &seal_doc(keys, "max-header-gen", &self.max_header_gen)?,
+                "verified-header-gen",
+                &seal_doc(keys, "verified-header-gen", &self.max_header_gen)?,
             )?;
             self.dirty.header_gen = false;
         }

@@ -31,6 +31,7 @@ use crate::sync_types::{
 };
 use crate::webdav::{CheckOutcome, CheckReceiver, load_credentials};
 use nuvoletta_core::{NoteId, now_ms};
+use nuvoletta_crypto::{ObjType, ObjectMeta, Subkeys, open, seal};
 use nuvoletta_storage::{NoteSummary, Unlocked};
 use nuvoletta_sync::ids::Id16;
 use nuvoletta_sync::state::STATE_DIR;
@@ -51,7 +52,8 @@ pub use trash::DeletedItem;
 type BoxProvider = Box<dyn Provider + Send>;
 type BoxSyncer = Syncer<BoxProvider>;
 
-const NOTICES_FILE: &str = "sync-notices.json";
+const NOTICES_FILE: &str = "sync-notices";
+const LEGACY_NOTICES_FILE: &str = "sync-notices.json";
 
 /// When automatic syncs happen. Defaults: 5 seconds after a save, every 5 minutes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,7 +133,7 @@ struct JobResult {
 /// Sync state of an unlocked session.
 #[derive(Default)]
 pub(crate) struct SyncSession {
-    syncer: Option<Box<BoxSyncer>>,
+    pub(crate) syncer: Option<Box<BoxSyncer>>,
     job: Option<Receiver<JobResult>>,
     /// A lock was requested during a cycle; the flag is `force`.
     pub(crate) lock_after: Option<bool>,
@@ -176,33 +178,83 @@ fn open_syncer(
     Syncer::open(vault, provider).map(Box::new)
 }
 
-fn load_notices(root: &Path) -> Vec<SyncNotice> {
-    let Ok(text) = std::fs::read_to_string(device_state_dir(root).join(NOTICES_FILE)) else {
-        return Vec::new();
-    };
-    let Ok(v) = serde_json::from_str::<Vec<serde_json::Value>>(&text) else {
-        return Vec::new();
-    };
-    let s = |v: &serde_json::Value, k: &str| {
-        v.get(k)
+/// Kind tag inside the sealed notices file, so another sealed local file cannot stand in for it.
+const NOTICES_KIND: &str = "sync-notices";
+
+fn notices_meta() -> Result<ObjectMeta> {
+    Ok(ObjectMeta::new(ObjType::LocalState, [0; 16])?)
+}
+
+fn notice_from_json(n: &serde_json::Value) -> SyncNotice {
+    let s = |k: &str| {
+        n.get(k)
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default()
             .to_owned()
     };
-    v.iter()
-        .map(|n| SyncNotice {
-            code: s(n, "code"),
-            title: s(n, "title"),
-            detail: s(n, "detail"),
-            first_seen_ms: n
-                .get("first_seen_ms")
-                .and_then(serde_json::Value::as_i64)
-                .unwrap_or(0),
-        })
-        .collect()
+    SyncNotice {
+        code: s("code"),
+        title: s("title"),
+        detail: s("detail"),
+        first_seen_ms: n
+            .get("first_seen_ms")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(0),
+    }
 }
 
-fn save_notices(root: &Path, notices: &[SyncNotice]) -> Result<()> {
+/// The notice shown when the stored warnings cannot be trusted any more.
+fn notices_lost() -> SyncNotice {
+    SyncNotice {
+        code: "notices-lost".to_owned(),
+        title: "Stored sync warnings could not be read".to_owned(),
+        detail: "The file holding this device's unacknowledged sync warnings is damaged \
+                 or was replaced, so warnings you had not yet acknowledged may be \
+                 missing. Someone with access to this device's files may have tampered with \
+                 it. Check the sync folder and your other devices."
+            .to_owned(),
+        first_seen_ms: now_ms(),
+    }
+}
+
+/// Load the notices, sealed with `K_local` so that a local writer cannot edit them or swap in
+/// another file unnoticed. A file that does not authenticate yields a [`notices_lost`] notice. A missing file
+/// cannot be told from first use, so deleting it is not detected (documented in the threat model). A plaintext file from an
+/// older version is read once and replaced by the sealed one on the next save.
+fn load_notices(root: &Path, keys: &Subkeys) -> Vec<SyncNotice> {
+    let dir = device_state_dir(root);
+    let sealed = std::fs::read(dir.join(NOTICES_FILE));
+    let list = match sealed {
+        Ok(bytes) => open(keys, &bytes)
+            .ok()
+            .filter(|o| o.meta.obj_type == ObjType::LocalState)
+            .and_then(|o| serde_json::from_slice::<serde_json::Value>(&o.plaintext).ok())
+            .filter(|v| v.get("kind").and_then(serde_json::Value::as_str) == Some(NOTICES_KIND))
+            .and_then(|v| {
+                v.get("notices")
+                    .and_then(serde_json::Value::as_array)
+                    .cloned()
+            }),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return load_legacy_notices(&dir);
+        }
+        Err(_) => None,
+    };
+    match list {
+        Some(v) => v.iter().map(notice_from_json).collect(),
+        None => vec![notices_lost()],
+    }
+}
+
+fn load_legacy_notices(dir: &Path) -> Vec<SyncNotice> {
+    std::fs::read_to_string(dir.join(LEGACY_NOTICES_FILE))
+        .ok()
+        .and_then(|t| serde_json::from_str::<Vec<serde_json::Value>>(&t).ok())
+        .map(|v| v.iter().map(notice_from_json).collect())
+        .unwrap_or_default()
+}
+
+fn save_notices(root: &Path, keys: &Subkeys, notices: &[SyncNotice]) -> Result<()> {
     let v: Vec<_> = notices
         .iter()
         .map(|n| {
@@ -211,11 +263,12 @@ fn save_notices(root: &Path, notices: &[SyncNotice]) -> Result<()> {
             })
         })
         .collect();
-    write_device_file(
-        root,
-        NOTICES_FILE,
-        serde_json::Value::Array(v).to_string().as_bytes(),
-    )
+    let plain = serde_json::json!({ "kind": NOTICES_KIND, "notices": v }).to_string();
+    let sealed = seal(keys, &notices_meta()?, plain.as_bytes())?;
+    write_device_file(root, NOTICES_FILE, &sealed)?;
+    // The plaintext file of older versions is superseded.
+    let _ = std::fs::remove_file(device_state_dir(root).join(LEGACY_NOTICES_FILE));
+    Ok(())
 }
 
 /// Add a notice unless the same one is already shown. Returns whether it was new.
@@ -403,11 +456,15 @@ impl Session {
             && let Ok(new) = vault.read_note(&id)
         {
             if o.dirty() {
+                // The edits were typed on the revision the vault held before this cycle.
+                if o.sync_base.is_none() {
+                    o.sync_base = old.get(&id).copied();
+                }
                 o.note = new;
                 o.changed_by_sync = true;
                 return (
                     false,
-                    Some("This note was updated by sync while you were editing it. Your edits are still in the editor; saving replaces the synced version (which stays in sync history).".to_owned()),
+                    Some("This note was updated by sync while you were editing it. Your edits are still in the editor; saving keeps both versions and shows the note under conflicts.".to_owned()),
                 );
             }
             o.buffer = zeroize::Zeroizing::new(new.body.clone());
@@ -491,7 +548,11 @@ impl App {
             return;
         };
         self.sync_cfg = SyncSettings::load(&s.root);
-        s.sync.notices = load_notices(&s.root);
+        if let Some(v) = s.vault.as_ref() {
+            s.sync.notices = load_notices(&s.root, v.keys());
+            // Written even when empty, so that a later removal of the file is noticed.
+            let _ = save_notices(&s.root, v.keys(), &s.sync.notices);
+        }
         if self.sync_cfg.webdav_configured
             && let Some(v) = s.vault.as_ref()
         {
@@ -726,8 +787,8 @@ impl App {
                 for e in &report.invalid {
                     changed |= add_notice(&mut s.sync.notices, describe_invalid(e, now_ms()));
                 }
-                if changed {
-                    let _ = save_notices(&s.root, &s.sync.notices);
+                if changed && let Some(v) = s.vault.as_ref() {
+                    let _ = save_notices(&s.root, v.keys(), &s.sync.notices);
                 }
                 true
             }
@@ -812,8 +873,11 @@ impl App {
         if index >= s.sync.notices.len() {
             return Err(Error::Invalid("that notice no longer exists"));
         }
+        // Needs the vault keys, so it waits for a running cycle (SyncBusy) before changing anything.
+        s.vault()?;
         s.sync.notices.remove(index);
-        save_notices(&s.root, &s.sync.notices)
+        let vault = s.vault.as_ref().ok_or(Error::SyncBusy)?;
+        save_notices(&s.root, vault.keys(), &s.sync.notices)
     }
 
     /// Notes with conflicting versions, as of the last cycle or resolution.
